@@ -163,7 +163,7 @@ API_TOKEN = "SAME-TOKEN-AS-BACKEND"
 
 ## Limitations and operational notes
 
-- Small English embedding models and a small generation/judge model prioritize free CPU/quota use. LLM judges can be inconsistent or wrong; same-model judging can introduce correlated bias. Reference quality matters. No confidence intervals or human validation are implied.
+- Small English embedding models and compact judge prompts prioritize free CPU/quota use. LLM judges can be inconsistent or wrong; same-model judging can introduce correlated bias. Reference quality matters. No confidence intervals or human validation are implied.
 - Groq generation and judging both consume free API quota; this tool makes multiple requests per answer. Default pacing is one request every four seconds, sequential scoring, with bounded SDK retries. Daily quotas may still run out. Adjust `GROQ_REQUEST_INTERVAL` conservatively.
 - Local sequential model loading limits simultaneous weight memory, but Python/PyTorch may retain allocations. Provision adequate RAM.
 - Intended as a small shared internal tool, not a multi-tenant service. No per-user data isolation, cancellation, distributed queue, automatic retention policy or resume after backend restart. Run IDs are shared workspace identifiers.

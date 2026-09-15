@@ -190,7 +190,7 @@ def results():
         st.success(f"Highest equal-weight mean: {', '.join(winners)} · {best:.3f}")
     else:
         st.warning("Results are incomplete. Averages exclude missing scores; no overall winner is declared.")
-    st.caption("Judge scores are estimates, not ground truth. The same small Groq model generates and judges answers; compare with human review.")
+    st.caption("Judge scores are estimates, not ground truth. The same Groq model generates and judges answers; compare with human review.")
     frame = pd.DataFrame(summaries).set_index("name")[METRICS]
     st.dataframe(frame.style.format("{:.3f}", na_rep="—").highlight_max(axis=0, color="#d0eee2"), width="stretch")
     counts = pd.DataFrame([{ "name": s["name"], **{m: f"{s['valid_counts'][m]}/{s['expected_questions']}" for m in METRICS}} for s in summaries])

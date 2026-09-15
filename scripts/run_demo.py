@@ -1,5 +1,7 @@
 """Run the full real demo against a running backend and require complete finite scores."""
 import os
+import math
+import sys
 import time
 from pathlib import Path
 import httpx
@@ -9,12 +11,16 @@ load_dotenv()
 base = os.getenv("BACKEND_URL", "http://127.0.0.1:8000").rstrip("/")
 headers = {"Authorization": "Bearer " + os.environ["API_TOKEN"]} if os.getenv("API_TOKEN") else {}
 with httpx.Client(base_url=base, headers=headers, timeout=120) as client:
-    response = client.post("/api/demo")
-    response.raise_for_status()
-    demo = response.json()
-    response = client.post("/api/runs", json={k: demo[k] for k in ["document_set_id", "test_set_id", "configuration_ids"]})
-    response.raise_for_status()
-    run_id = response.json()["id"]
+    if len(sys.argv) > 1:
+        # Verify a run started through the dashboard without consuming another run's quota.
+        run_id = sys.argv[1]
+    else:
+        response = client.post("/api/demo")
+        response.raise_for_status()
+        demo = response.json()
+        response = client.post("/api/runs", json={k: demo[k] for k in ["document_set_id", "test_set_id", "configuration_ids"]})
+        response.raise_for_status()
+        run_id = response.json()["id"]
     print("Run:", run_id, flush=True)
     deadline = time.monotonic() + 7200
     previous = None
@@ -39,7 +45,11 @@ with httpx.Client(base_url=base, headers=headers, timeout=120) as client:
     out.write_text(response.text, encoding="utf-8")
     assert run["status"] == "completed", f"Incomplete run; inspect {out}"
     assert len(run["rows"]) == 20
+    assert all(not row["errors"] and len(row["scores"]) == 4
+               and all(value is not None and math.isfinite(value) for value in row["scores"].values())
+               for row in run["rows"]), "Expected all 80 finite real scores without errors"
     assert any(s["overall"] > 0 for s in run["summary"])
     csv = client.get(f"/api/runs/{run_id}/export")
     csv.raise_for_status()
+    out.with_suffix(".csv").write_bytes(csv.content)
     print("Full real evaluation passed:", run["summary"], flush=True)

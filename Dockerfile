@@ -7,5 +7,7 @@ RUN pip install --no-cache-dir torch==2.8.0 --index-url https://download.pytorch
     && pip install --no-cache-dir -r backend/requirements.txt
 COPY backend backend
 COPY sample_data sample_data
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+RUN python -c "import ragas; from backend.groq_judge import GroqRagasLLM; from ragas.metrics import Faithfulness, ResponseRelevancy, LLMContextPrecisionWithReference, LLMContextRecall"
 EXPOSE 8000
 CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]
