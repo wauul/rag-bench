@@ -18,6 +18,16 @@ def test_reject_bad_configuration():
         RunRequest(document_set_id="x", test_set_id="y", configuration_ids=["same", "same"])
 
 
+def test_groq_judge_uses_separate_completions(monkeypatch):
+    from backend.pipeline import make_llm, make_metrics
+    monkeypatch.setenv("GROQ_API_KEY", "test-placeholder")
+    llm = make_llm()
+    metrics = make_metrics(llm, None)
+    assert metrics["answer_relevancy"].llm.bypass_n is True
+    assert metrics["answer_relevancy"].strictness == 3
+    assert llm.n == 1
+
+
 def test_ingestion_and_test_formats():
     docs = extract_document("../../test.txt", b"A useful handbook.")
     assert docs[0]["source"] == "test.txt"
