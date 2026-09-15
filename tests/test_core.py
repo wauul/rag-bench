@@ -28,6 +28,25 @@ def test_groq_judge_uses_separate_completions(monkeypatch):
     assert llm.n == 1
 
 
+def test_groq_judge_combines_text_without_batch_usage_bug(monkeypatch):
+    from backend.groq_judge import GroqRagasLLM
+    from ragas.llms.base import LangchainLLMWrapper
+    from langchain_core.outputs import LLMResult, Generation
+    from backend.pipeline import make_llm
+    monkeypatch.setenv("GROQ_API_KEY", "test-placeholder")
+    calls = []
+
+    async def one_completion(self, prompt, n, **kwargs):
+        calls.append(n)
+        return LLMResult(generations=[[Generation(text="test")]],
+                         llm_output={"token_usage": {"completion_tokens_details": {"reasoning_tokens": 10}}})
+
+    monkeypatch.setattr(LangchainLLMWrapper, "agenerate_text", one_completion)
+    result = asyncio.run(GroqRagasLLM(make_llm(), bypass_n=True).agenerate_text("test", n=3))
+    assert calls == [1, 1, 1]
+    assert len(result.generations[0]) == 3
+
+
 def test_ingestion_and_test_formats():
     docs = extract_document("../../test.txt", b"A useful handbook.")
     assert docs[0]["source"] == "test.txt"

@@ -131,7 +131,8 @@ def start_run(body: RunRequest):
                 "ragas": "0.3.9", "relevancy_embeddings": "sentence-transformers/all-MiniLM-L6-v2",
                 "inference_backend": os.getenv("INFERENCE_BACKEND", "sentence-transformers"),
                 "precision": "dynamic-int8" if os.getenv("INFERENCE_BACKEND") == "onnx" else "float32",
-                "temperature": 0, "relevancy_strictness": 3}})
+                "generator_temperature": 0, "judge_temperature": "Ragas default per metric",
+                "reasoning_effort": "low", "relevancy_strictness": 3}})
         executor.submit(worker, run["id"])
     except Exception:
         run_lock.release()

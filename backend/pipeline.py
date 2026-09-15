@@ -69,7 +69,8 @@ def make_llm():
     from langchain_groq import ChatGroq
     from langchain_core.rate_limiters import InMemoryRateLimiter
     interval = max(float(os.getenv("GROQ_REQUEST_INTERVAL", "4")), 0.1)
-    return ChatGroq(model=os.getenv("GROQ_MODEL", "openai/gpt-oss-20b"), temperature=0, max_tokens=4096,
+    return ChatGroq(model=os.getenv("GROQ_MODEL", "openai/gpt-oss-20b"), temperature=0, max_tokens=2048,
+                    reasoning_effort="low",
                     max_retries=5, timeout=120,
                     rate_limiter=InMemoryRateLimiter(requests_per_second=1 / interval,
                                                      check_every_n_seconds=0.1, max_bucket_size=1))
@@ -78,7 +79,7 @@ def make_llm():
 def make_metrics(llm, evaluation_model):
     from langchain_core.embeddings import Embeddings
     from ragas.embeddings import LangchainEmbeddingsWrapper
-    from ragas.llms import LangchainLLMWrapper
+    from backend.groq_judge import GroqRagasLLM
     from ragas.metrics import Faithfulness, ResponseRelevancy, LLMContextPrecisionWithReference, LLMContextRecall
     from ragas.run_config import RunConfig
 
@@ -92,7 +93,7 @@ def make_metrics(llm, evaluation_model):
 
     # Groq only supports n=1. Ragas relevancy needs three independent completions;
     # bypass_n issues separate requests instead of forwarding unsupported n=3 to Groq.
-    judge = LangchainLLMWrapper(llm, bypass_n=True,
+    judge = GroqRagasLLM(llm, bypass_n=True,
         run_config=RunConfig(timeout=240, max_retries=3, max_workers=1))
     embeddings = LangchainEmbeddingsWrapper(FixedEmbeddings())
     # Faithfulness: fraction of generated claims the judge finds supported by retrieved context.
