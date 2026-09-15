@@ -1,0 +1,14 @@
+# Free instances have 512 MB RAM and ephemeral storage. See README feasibility warning.
+services:
+  - type: web
+    name: rag-bench-api
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
+      - key: API_TOKEN
+        generateValue: true
+      - key: GROQ_REQUEST_INTERVAL
+        value: "4"

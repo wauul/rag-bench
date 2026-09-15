@@ -1,0 +1,15 @@
+{
+  "name": "Harbor Community Lab · 10 questions",
+  "questions": [
+    {"question": "When is Harbor Community Lab open on Saturdays?", "reference": "The lab opens on Saturdays from 10:00 to 16:00."},
+    {"question": "How much does student membership cost and what is required?", "reference": "Student membership costs 10 credits per month and requires a valid student ID."},
+    {"question": "How many items can a member borrow, and for how long?", "reference": "Members can borrow up to two items at a time for seven calendar days."},
+    {"question": "What is the late return fee and its maximum per item?", "reference": "Late returns cost 2 credits per item per day, capped at 20 credits per item."},
+    {"question": "What happens after two missed workshops without timely cancellation?", "reference": "Workshop booking privileges are suspended for 30 days."},
+    {"question": "What training is required before using the laser cutter?", "reference": "Members must complete a 90-minute safety induction and pass a practical check with a supervisor."},
+    {"question": "How many free printing pages do members get, and do unused pages roll over?", "reference": "Members get 20 free black-and-white pages each calendar month; unused pages do not roll over."},
+    {"question": "When is a meeting room released if the organizer is late?", "reference": "The room is released if the organizer has not arrived within 15 minutes of the reservation start."},
+    {"question": "How long are equipment loan records retained after return?", "reference": "Equipment loan records are retained for 12 months after the item is returned."},
+    {"question": "What is the maximum project grant and when must a completion report be submitted?", "reference": "The maximum grant is 200 credits, and a completion report is due within 60 days of receiving the grant."}
+  ]
+}

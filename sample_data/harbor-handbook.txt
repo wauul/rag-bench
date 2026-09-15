@@ -1,0 +1,32 @@
+HARBOR COMMUNITY LAB — MEMBER HANDBOOK
+Edition: January 2026. Harbor Community Lab is a fictional community learning space used for this benchmark.
+
+ACCESS AND OPENING HOURS
+The lab opens Tuesday through Friday from 09:00 to 20:00 and Saturday from 10:00 to 16:00. It is closed on Sundays, Mondays, and public holidays. The last entry is 30 minutes before closing. Members must scan their own membership card at reception. Cards cannot be lent to other people. Visitors must sign in and remain with their host.
+
+MEMBERSHIP
+Standard membership costs 18 credits per month. Student membership costs 10 credits per month with a valid student ID. Both memberships include access to the reading room, weekly workshops, and borrowing privileges. Membership can be paused for up to three months per year by emailing the membership desk before the next billing date. Day visitors pay 4 credits and cannot borrow equipment.
+
+EQUIPMENT LOANS
+Members may borrow up to two items at a time for seven calendar days. Each item may be renewed once for another seven days if nobody has reserved it. Renewals must be requested before the original due date. Late returns cost 2 credits per item per day, capped at 20 credits per item. Laptops and cameras require a refundable deposit of 30 credits. Microscopes may only be used inside the lab and cannot be taken home.
+
+WORKSHOP BOOKINGS
+Workshops are free for members, but booking is required. Registration opens 14 days before the workshop. Each session has 12 places. Members can cancel without penalty until 24 hours before the start. Missing two booked sessions without timely cancellation suspends workshop booking privileges for 30 days. When a session is full, members may join a waiting list; an offered place must be accepted within six hours.
+
+SAFETY AND TRAINING
+Before using the laser cutter, members must complete a 90-minute safety induction and pass a practical check with a supervisor. The laser cutter must never operate unattended. Safety goggles are mandatory in the fabrication room. Food and drinks are allowed only in the lounge. An emergency stop button is mounted beside each fabrication machine. Report accidents immediately to the duty supervisor.
+
+PRINTING AND MATERIALS
+Black-and-white printing costs 0.05 credits per page; color printing costs 0.20 credits per page. A member receives 20 free black-and-white pages at the start of each calendar month; unused free pages do not roll over. Three-dimensional printing costs 0.08 credits per gram of filament. Members may use only lab-approved filament to protect the printers. Failed prints caused by equipment faults are not charged.
+
+QUIET ROOM AND MEETING ROOMS
+The reading room is a quiet space; calls and group conversations belong in the lounge. Two meeting rooms can be reserved in blocks of 30 minutes, up to two hours per booking. Each member may hold only one future meeting-room reservation at a time. Rooms are released if the organizer has not arrived within 15 minutes of the reservation start time.
+
+DATA AND PRIVACY
+Public computers erase local user files when the session ends. Members must save work to their own storage before signing out. Equipment loan records are retained for 12 months after an item is returned. CCTV footage is normally retained for 14 days, unless needed to investigate an incident. Members can request a copy of their membership data from the privacy desk.
+
+SUPPORT AND LOST PROPERTY
+For account or booking help, email help@harbor.example. Staff aim to reply within two working days. Lost property is kept at reception for 30 days, then donated or recycled. Found identity documents are passed to the appropriate issuing authority instead. The duty supervisor can assist with urgent safety issues during opening hours.
+
+COMMUNITY PROJECT GRANTS
+Members may apply for a project grant of up to 200 credits once per calendar year. Applications must include a one-page project description, a materials budget, and a plan for sharing the results with the community. The review panel meets on the first Thursday of each month. Approved projects must submit a short completion report within 60 days of receiving the grant.

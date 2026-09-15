@@ -1,0 +1,7 @@
+.git
+.venv
+.env
+.tools
+data
+__pycache__
+.streamlit/secrets.toml

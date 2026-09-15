@@ -1,0 +1,15 @@
+name: Tests
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install -r backend/requirements.txt -r dashboard/requirements.txt
+      - run: python -m pytest -q
+        env:
+          RAGAS_DO_NOT_TRACK: 'true'
