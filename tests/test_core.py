@@ -88,6 +88,10 @@ def test_api_upload_demo_auth_and_missing_key(tmp_path, monkeypatch):
         body = {k: demo[k] for k in ["document_set_id", "test_set_id", "configuration_ids"]}
         assert client.post("/api/runs", json=body).status_code == 503
         assert client.get("/api/runs/unknown").status_code == 404
+        monkeypatch.setenv("GROQ_API_KEY", "test-placeholder")
+        duplicate = client.post("/api/configurations", json={"name": demo["configurations"][0]["name"]}).json()
+        body["configuration_ids"] = [demo["configuration_ids"][0], duplicate["id"]]
+        assert client.post("/api/runs", json=body).status_code == 422
 
 
 def test_metric_failures_not_zeroed_and_summary_excludes_incomplete():

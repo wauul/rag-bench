@@ -52,7 +52,8 @@ def fetch(kind, object_id):
 @app.get("/health")
 def health():
     return {"status": "ok", "generation_ready": bool(os.getenv("GROQ_API_KEY")),
-            "authentication_required": bool(os.getenv("API_TOKEN"))}
+            "authentication_required": bool(os.getenv("API_TOKEN")),
+            "revision": os.getenv("RENDER_GIT_COMMIT", "local")}
 
 
 @app.post("/api/documents", dependencies=auth, status_code=201)
@@ -120,6 +121,8 @@ def start_run(body: RunRequest):
     fetch("documents", body.document_set_id)
     test = fetch("test_set", body.test_set_id)
     configs = [fetch("configuration", cid) for cid in body.configuration_ids]
+    if len({c["name"].strip().casefold() for c in configs}) != len(configs):
+        raise HTTPException(422, "Configuration names must be distinct for comparison charts")
     if not run_lock.acquire(blocking=False):
         raise HTTPException(409, "An evaluation is already running. Wait for it to finish.")
     try:
