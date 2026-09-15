@@ -21,8 +21,8 @@ def recover(store, run_id):
     run = store.get("run", run_id)
     if run["status"] != "partial" or len(run["rows"]) != run["total"]:
         raise ValueError("Recovery requires a partial run with every retrieval row stored")
-    expected = {"generator": os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),
-                "judge": os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),
+    expected = {"generator": os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b"),
+                "judge": os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b"),
                 "inference_backend": os.getenv("INFERENCE_BACKEND", "sentence-transformers"),
                 "judge_prompt_examples": max(0, int(os.getenv("JUDGE_EXAMPLES", "0")))}
     if any(run["provenance"].get(k) != v for k, v in expected.items()):

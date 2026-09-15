@@ -19,7 +19,7 @@ def test_recovery_preserves_successful_scores_and_failure_history(tmp_path, monk
     original_bad = deepcopy(bad)
     run = store.save("run", {"status": "partial", "total": 2, "rows": [good, bad],
         "questions": [{}, {}], "configurations": [{"id": "cfg", "name": "Config"}],
-        "provenance": {"generator": "openai/gpt-oss-120b", "judge": "openai/gpt-oss-120b",
+        "provenance": {"generator": "qwen/qwen3.8-27b", "judge": "qwen/qwen3.8-27b",
                        "inference_backend": "sentence-transformers", "judge_prompt_examples": 0}})
     monkeypatch.setattr(pipeline, "make_llm", lambda: object())
     monkeypatch.setattr(pipeline, "load_embedder", lambda _: object())

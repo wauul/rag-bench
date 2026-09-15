@@ -95,8 +95,9 @@ def configurations(body: Configuration):
 def demo():
     doc = store.save("documents", {"documents": extract_document("harbor-handbook.txt", (sample_dir / "harbor-handbook.txt").read_bytes())})
     test = test_sets(TestSet(**json.loads((sample_dir / "questions.json").read_text(encoding="utf-8"))))
-    configs = [configurations(Configuration(name="MiniLM · 96 tokens", chunk_size=96, overlap=16)),
-               configurations(Configuration(name="BGE · 192 + rerank", embedding_model="BAAI/bge-small-en-v1.5", rerank=True))]
+    # Two candidates keep the ten-question demo within modest free judge quotas.
+    configs = [configurations(Configuration(name="MiniLM · 96 tokens", chunk_size=96, overlap=16, top_k=2)),
+               configurations(Configuration(name="BGE · 192 + rerank", embedding_model="BAAI/bge-small-en-v1.5", rerank=True, top_k=2))]
     return {"document_set_id": doc["id"], "test_set_id": test["id"],
             "configuration_ids": [c["id"] for c in configs], "configurations": configs,
             "questions": test["questions"]}
@@ -130,13 +131,14 @@ def start_run(body: RunRequest):
         run = store.save("run", {**body.model_dump(), "configurations": configs, "questions": test["questions"],
             "status": "queued", "stage": "Queued", "created_at": now(), "completed": 0,
             "total": len(configs) * len(test["questions"]), "rows": [], "summary": [],
-            "provenance": {"generator": os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"), "judge": os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),
+            "provenance": {"generator": os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b"), "judge": os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b"),
                 "ragas": "0.3.9", "relevancy_embeddings": "sentence-transformers/all-MiniLM-L6-v2",
                 "inference_backend": os.getenv("INFERENCE_BACKEND", "sentence-transformers"),
                 "precision": "dynamic-int8" if os.getenv("INFERENCE_BACKEND") == "onnx" else "float32",
                 "generator_temperature": 0, "judge_temperature": "Ragas default per metric",
                 "judge_prompt_examples": max(0, int(os.getenv("JUDGE_EXAMPLES", "0"))),
-                "reasoning_effort": "low", "relevancy_strictness": 3}})
+                "reasoning_effort": "none" if os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b").startswith("qwen/") else "low",
+                "relevancy_strictness": 3}})
         executor.submit(worker, run["id"])
     except Exception:
         run_lock.release()

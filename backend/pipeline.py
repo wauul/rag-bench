@@ -70,8 +70,9 @@ def make_llm():
     from langchain_groq import ChatGroq
     from langchain_core.rate_limiters import InMemoryRateLimiter
     interval = max(float(os.getenv("GROQ_REQUEST_INTERVAL", "4")), 0.1)
-    return ChatGroq(model=os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"), temperature=0, max_tokens=2048,
-                    reasoning_effort="low",
+    model = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
+    return ChatGroq(model=model, temperature=0, max_tokens=2048,
+                    reasoning_effort="none" if model.startswith("qwen/") else "low",
                     max_retries=5, timeout=120,
                     rate_limiter=InMemoryRateLimiter(requests_per_second=1 / interval,
                                                      check_every_n_seconds=0.1, max_bucket_size=1))

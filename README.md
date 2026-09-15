@@ -23,7 +23,7 @@ Streamlit dashboard → FastAPI → SQLite (documents, test sets, configurations
                              → Ragas + Groq judge + fixed local judge embeddings
 ```
 
-Generation and judging both use `openai/gpt-oss-120b` through Groq's free quota. The originally requested `llama-3.1-8b-instant` was [retired for free/developer accounts on August 16, 2026](https://console.groq.com/docs/deprecations). Groq recommends GPT-OSS 20B as its replacement; this deployment uses the available GPT-OSS 120B model because the account's 20B daily token quota was exhausted during integration checks. Set `GROQ_MODEL` to select an available GPT-OSS model. The tool does not silently switch models within a run. Retrieval compares `sentence-transformers/all-MiniLM-L6-v2` with `BAAI/bge-small-en-v1.5`. Optional reranking uses `cross-encoder/ms-marco-MiniLM-L-6-v2`. All inference except generation/judging runs on the backend CPU. Streamlit only calls the API.
+Generation and judging both use `qwen/qwen3.8-27b` through Groq's free quota, with reasoning disabled to conserve tokens. The originally requested `llama-3.1-8b-instant` was [retired for free/developer accounts on August 16, 2026](https://console.groq.com/docs/deprecations). Set `GROQ_MODEL` to select an available Qwen or GPT-OSS model; Qwen uses `reasoning_effort=none` and GPT-OSS uses `low`. The tool does not silently switch models within a run. Retrieval compares `sentence-transformers/all-MiniLM-L6-v2` with `BAAI/bge-small-en-v1.5`. Optional reranking uses `cross-encoder/ms-marco-MiniLM-L-6-v2`. All inference except generation/judging runs on the backend CPU. Streamlit only calls the API.
 
 ## Local setup (Python 3.11+)
 
@@ -62,6 +62,8 @@ Chroma persists vectors under `data/chroma`; metadata and complete result rows p
 5. Open **Results** for metric means, valid counts, bars/radar, reference answers and passages side by side. CSV exports contain one row per configuration/question, all scores, contexts, errors and latency.
 
 The sample compares multiple changes at once to demonstrate the interface; its winner cannot establish which individual setting caused an improvement.
+
+Both demo configurations retrieve two candidates per question to conserve free judge quota. The setup form supports top-k values from one to eight for custom experiments.
 
 ## What the metrics mean
 
