@@ -11,7 +11,13 @@ app_port: 8000
 
 Compare 2–4 retrieval configurations on one document set and one reference test set. Inspect real generated answers, retrieved passages and four Ragas metrics in a separate Streamlit dashboard.
 
-**Status:** Implementation, real local retrieval, compact-model agreement checks and automated UI/API tests are available. Full Groq/Ragas and live deployment verification are in progress. No precomputed or fabricated benchmark scores are shipped.
+**Status (September 15, 2026):** The full local sample passed with 20 answers and all 80 finite Ragas scores; 11 automated tests passed. The hosted dashboard and API are deployed, and real hosted scoring, charts and passage inspection were checked. A complete error-free hosted run remains unverified after Groq quota errors. Further testing was stopped at the owner's request. No fabricated benchmark scores are shipped.
+
+- [Live Streamlit dashboard](https://wauul-rag-bench-dashboardapp-peuvxw.streamlit.app/)
+- [FastAPI documentation](https://rag-bench-api.onrender.com/docs)
+- [GitHub repository](https://github.com/wauul/rag-bench)
+
+The successful local run is `6b74daea575e4a09842f4953c4b05f07`. Its real JSON and CSV exports are saved under the local ignored `data/` directory. MiniLM's equal-weight mean was 0.9504 and BGE with reranking was 0.9435 on this small sample; this is not a general model-quality claim.
 
 ## Architecture
 
