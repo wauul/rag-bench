@@ -127,11 +127,12 @@ def start_run(body: RunRequest):
         run = store.save("run", {**body.model_dump(), "configurations": configs, "questions": test["questions"],
             "status": "queued", "stage": "Queued", "created_at": now(), "completed": 0,
             "total": len(configs) * len(test["questions"]), "rows": [], "summary": [],
-            "provenance": {"generator": os.getenv("GROQ_MODEL", "openai/gpt-oss-20b"), "judge": os.getenv("GROQ_MODEL", "openai/gpt-oss-20b"),
+            "provenance": {"generator": os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"), "judge": os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),
                 "ragas": "0.3.9", "relevancy_embeddings": "sentence-transformers/all-MiniLM-L6-v2",
                 "inference_backend": os.getenv("INFERENCE_BACKEND", "sentence-transformers"),
                 "precision": "dynamic-int8" if os.getenv("INFERENCE_BACKEND") == "onnx" else "float32",
                 "generator_temperature": 0, "judge_temperature": "Ragas default per metric",
+                "judge_prompt_examples": max(0, int(os.getenv("JUDGE_EXAMPLES", "0"))),
                 "reasoning_effort": "low", "relevancy_strictness": 3}})
         executor.submit(worker, run["id"])
     except Exception:

@@ -23,7 +23,7 @@ Streamlit dashboard → FastAPI → SQLite (documents, test sets, configurations
                              → Ragas + Groq judge + fixed local judge embeddings
 ```
 
-Generation and judging both use `openai/gpt-oss-20b` through Groq. The originally requested `llama-3.1-8b-instant` was [retired for free/developer accounts on August 16, 2026](https://console.groq.com/docs/deprecations); GPT-OSS 20B is Groq's recommended replacement. Set `GROQ_MODEL` to select another model your account supports. Retrieval compares `sentence-transformers/all-MiniLM-L6-v2` with `BAAI/bge-small-en-v1.5`. Optional reranking uses `cross-encoder/ms-marco-MiniLM-L-6-v2`. All inference except generation/judging runs on the backend CPU. Streamlit only calls the API.
+Generation and judging both use `openai/gpt-oss-120b` through Groq's free quota. The originally requested `llama-3.1-8b-instant` was [retired for free/developer accounts on August 16, 2026](https://console.groq.com/docs/deprecations). Groq recommends GPT-OSS 20B as its replacement; this deployment uses the available GPT-OSS 120B model because the account's 20B daily token quota was exhausted during integration checks. Set `GROQ_MODEL` to select an available GPT-OSS model. The tool does not silently switch models within a run. Retrieval compares `sentence-transformers/all-MiniLM-L6-v2` with `BAAI/bge-small-en-v1.5`. Optional reranking uses `cross-encoder/ms-marco-MiniLM-L-6-v2`. All inference except generation/judging runs on the backend CPU. Streamlit only calls the API.
 
 ## Local setup (Python 3.11+)
 
@@ -74,7 +74,7 @@ The sample compares multiple changes at once to demonstrate the interface; its w
 
 Higher is generally better. Relevancy is based on cosine similarity and is not a calibrated probability (it can theoretically be negative); the other metrics are fractions in [0,1]. The bar chart includes a small negative margin; use tables/CSV for the exact scores. An equal-weight arithmetic mean is shown as a convenience only when **every question and metric succeeds for every configuration**. Ties are named. No statistical significance claim is made.
 
-We pin Ragas 0.3.9 and use its real single-turn metric API. We keep relevancy embeddings fixed across configurations so changing the retriever does not also change the measurement. NaN, API failures and judge parsing errors appear as **missing**, never as fabricated zeros. Partial summaries include valid sample counts and cannot declare an overall winner.
+We pin Ragas 0.3.9 and use its real single-turn metric API. To conserve free quota, prompts retain Ragas's instructions and JSON schemas but omit few-shot examples by default (`JUDGE_EXAMPLES=0`). Set this to 1–3 to include up to that many built-in examples per prompt. Prompt settings are fixed for a run and recorded in provenance; changing prompts can affect scores. The Groq adapter obtains relevancy's three completions through separate calls, handling Groq's `n=1` restriction and nested reasoning-token metadata. We keep relevancy embeddings fixed across configurations so changing the retriever does not also change the measurement. NaN, API failures and judge parsing errors appear as **missing**, never as fabricated zeros. Partial summaries include valid sample counts and cannot declare an overall winner.
 
 ## Chunking and reranking
 

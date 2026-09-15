@@ -4,6 +4,7 @@ import math
 import os
 import time
 import logging
+from copy import deepcopy
 from datetime import datetime, timezone
 from functools import lru_cache
 import numpy as np
@@ -69,7 +70,7 @@ def make_llm():
     from langchain_groq import ChatGroq
     from langchain_core.rate_limiters import InMemoryRateLimiter
     interval = max(float(os.getenv("GROQ_REQUEST_INTERVAL", "4")), 0.1)
-    return ChatGroq(model=os.getenv("GROQ_MODEL", "openai/gpt-oss-20b"), temperature=0, max_tokens=2048,
+    return ChatGroq(model=os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"), temperature=0, max_tokens=2048,
                     reasoning_effort="low",
                     max_retries=5, timeout=120,
                     rate_limiter=InMemoryRateLimiter(requests_per_second=1 / interval,
@@ -101,10 +102,20 @@ def make_metrics(llm, evaluation_model):
     # penalized for evasive answers. Three regenerated questions is Ragas's standard strictness.
     # Precision: average precision of retrieved chunks judged useful against the reference.
     # Recall: fraction of reference claims supported by the retrieved context.
-    return {"faithfulness": Faithfulness(llm=judge),
+    metrics = {"faithfulness": Faithfulness(llm=judge),
             "answer_relevancy": ResponseRelevancy(llm=judge, embeddings=embeddings, strictness=3),
             "context_precision": LLMContextPrecisionWithReference(llm=judge),
             "context_recall": LLMContextRecall(llm=judge)}
+    # Preserve Ragas instructions, schemas and score algorithms, while omitting lengthy
+    # few-shot examples by default to fit free-tier token quotas. Keep this fixed within
+    # a run and disclose it in provenance; users may restore examples with JUDGE_EXAMPLES.
+    examples = max(0, int(os.getenv("JUDGE_EXAMPLES", "0")))
+    for metric in metrics.values():
+        prompts = deepcopy(metric.get_prompts())
+        for prompt in prompts.values():
+            prompt.examples = prompt.examples[:examples]
+        metric.set_prompts(**prompts)
+    return metrics
 
 
 async def score_row(metrics, row):
