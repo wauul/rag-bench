@@ -1,8 +1,9 @@
-# Free instances have 512 MB RAM and ephemeral storage. See README feasibility warning.
+# Compact int8 ONNX runtime; free instances have ephemeral result storage.
 services:
   - type: web
     name: rag-bench-api
     runtime: docker
+    dockerfilePath: ./Dockerfile.render
     plan: free
     healthCheckPath: /health
     envVars:

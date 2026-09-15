@@ -2,7 +2,7 @@ FROM python:3.11-slim
 WORKDIR /app
 ENV PYTHONUNBUFFERED=1 TOKENIZERS_PARALLELISM=false OMP_NUM_THREADS=1 \
     HF_HUB_DISABLE_TELEMETRY=1 RAGAS_DO_NOT_TRACK=true DATA_DIR=/app/data
-COPY backend/requirements.txt backend/requirements.txt
+COPY backend/requirements.txt backend/requirements-core.txt backend/
 RUN pip install --no-cache-dir torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu \
     && pip install --no-cache-dir -r backend/requirements.txt
 COPY backend backend

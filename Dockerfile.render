@@ -1,0 +1,19 @@
+FROM python:3.11-slim AS models
+WORKDIR /app
+RUN pip install --no-cache-dir onnxruntime==1.22.1 onnx==1.19.0 huggingface-hub==0.36.2 pydantic==2.11.7 tokenizers==0.21.4
+COPY backend backend
+COPY scripts/prepare_onnx.py scripts/prepare_onnx.py
+RUN python -m scripts.prepare_onnx
+
+FROM python:3.11-slim
+WORKDIR /app
+ENV PYTHONUNBUFFERED=1 TOKENIZERS_PARALLELISM=false OMP_NUM_THREADS=1 \
+    HF_HUB_DISABLE_TELEMETRY=1 RAGAS_DO_NOT_TRACK=true DATA_DIR=/app/data \
+    INFERENCE_BACKEND=onnx ONNX_MODEL_DIR=/app/models MALLOC_ARENA_MAX=2
+COPY backend/requirements-core.txt backend/requirements-compact.txt backend/
+RUN pip install --no-cache-dir -r backend/requirements-compact.txt
+COPY --from=models /app/data/onnx /app/models
+COPY backend backend
+COPY sample_data sample_data
+EXPOSE 8000
+CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]

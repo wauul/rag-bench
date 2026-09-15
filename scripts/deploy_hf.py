@@ -16,7 +16,7 @@ def main():
     api.create_repo(args.space_id, repo_type="space", space_sdk="docker", space_hardware="cpu-basic", exist_ok=True)
     root = Path(__file__).resolve().parents[1]
     api.upload_folder(repo_id=args.space_id, repo_type="space", folder_path=root,
-        allow_patterns=["Dockerfile", "README.md", "backend/*.py", "backend/requirements.txt", "sample_data/*"],
+        allow_patterns=["Dockerfile", "README.md", "backend/*.py", "backend/requirements*.txt", "sample_data/*"],
         commit_message="Deploy RAG Bench FastAPI backend")
     print(f"Uploaded https://huggingface.co/spaces/{args.space_id}; configure GROQ_API_KEY and API_TOKEN as Space secrets.")
 

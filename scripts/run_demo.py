@@ -19,7 +19,11 @@ with httpx.Client(base_url=base, headers=headers, timeout=120) as client:
     deadline = time.monotonic() + 7200
     previous = None
     while time.monotonic() < deadline:
-        response = client.get(f"/api/runs/{run_id}")
+        try:
+            response = client.get(f"/api/runs/{run_id}")
+        except httpx.TransportError:
+            time.sleep(5)
+            continue
         response.raise_for_status()
         run = response.json()
         if run["stage"] != previous:
@@ -30,7 +34,7 @@ with httpx.Client(base_url=base, headers=headers, timeout=120) as client:
         time.sleep(5)
     else:
         raise TimeoutError(f"Run {run_id} still running; poll it in the dashboard")
-    out = Path("data/full-demo-results.json")
+    out = Path(f"data/full-demo-{run_id}.json")
     out.parent.mkdir(exist_ok=True)
     out.write_text(response.text, encoding="utf-8")
     assert run["status"] == "completed", f"Incomplete run; inspect {out}"

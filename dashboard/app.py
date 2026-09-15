@@ -27,6 +27,8 @@ COLORS = ["#007f73", "#de7c43", "#6778bf", "#bb5d87"]
 
 
 def api(method, path, **kwargs):
+    if not BASE:
+        raise RuntimeError("Backend deployment is pending. Set BACKEND_URL in Streamlit secrets once the API is ready.")
     response = requests.request(method, BASE + path, timeout=(10, 120),
         headers={"Authorization": f"Bearer {TOKEN}"} if TOKEN else {}, **kwargs)
     if not response.ok:
@@ -71,6 +73,8 @@ def setup():
     st.markdown('<p class="eyebrow">01 / BUILD YOUR BENCHMARK</p>', unsafe_allow_html=True)
     st.title("Better retrieval starts with evidence.")
     st.write("Compare configurations on the same questions. Inspect every answer and the passages behind it.")
+    if not BASE:
+        st.warning("Backend connection pending. This dashboard is deployed; evaluations become available once the API and Groq key are configured.")
     if st.session_state.get("demo_error"):
         st.error(st.session_state.pop("demo_error"))
     with st.container(border=True):

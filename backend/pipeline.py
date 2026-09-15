@@ -19,6 +19,9 @@ def now():
 
 @lru_cache(maxsize=1)
 def tokenizer():
+    if os.getenv("INFERENCE_BACKEND") == "onnx":
+        from backend.onnx_inference import ChunkTokenizer
+        return ChunkTokenizer()
     from transformers import AutoTokenizer
     # Use one fixed tokenizer for both configurations: chunk boundaries do not drift by model.
     return AutoTokenizer.from_pretrained(MODELS[0])
@@ -49,6 +52,9 @@ def chunk_documents(documents, config):
 
 
 def load_embedder(name):
+    if os.getenv("INFERENCE_BACKEND") == "onnx":
+        from backend.onnx_inference import OnnxModel
+        return OnnxModel(name)
     from sentence_transformers import SentenceTransformer
     return SentenceTransformer(name, device="cpu")
 
@@ -63,7 +69,7 @@ def make_llm():
     from langchain_groq import ChatGroq
     from langchain_core.rate_limiters import InMemoryRateLimiter
     interval = max(float(os.getenv("GROQ_REQUEST_INTERVAL", "4")), 0.1)
-    return ChatGroq(model="llama-3.1-8b-instant", temperature=0, max_tokens=2048,
+    return ChatGroq(model=os.getenv("GROQ_MODEL", "openai/gpt-oss-20b"), temperature=0, max_tokens=4096,
                     max_retries=5, timeout=120,
                     rate_limiter=InMemoryRateLimiter(requests_per_second=1 / interval,
                                                      check_every_n_seconds=0.1, max_bucket_size=1))
@@ -134,12 +140,13 @@ def execute_run(store, run_id):
     import asyncio
     import chromadb
     from chromadb.config import Settings
-    from sentence_transformers import CrossEncoder
     run = store.get("run", run_id)
     try:
         run.update(status="running", started_at=now(), stage="Loading local models")
         store.save("run", run, run_id)
         llm = make_llm()
+        # Fail once on an inaccessible/retired model instead of producing a run full of repeated errors.
+        llm.invoke("Reply with OK.")
         configs = run["configurations"]
         questions = run["questions"]
         documents = store.get("documents", run["document_set_id"])["documents"]
@@ -171,7 +178,12 @@ def execute_run(store, run_id):
             if config.rerank:
                 run["stage"] = f"Reranking {config.name}"
                 store.save("run", run, run_id)
-                reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2", device="cpu")
+                if os.getenv("INFERENCE_BACKEND") == "onnx":
+                    from backend.onnx_inference import OnnxModel
+                    reranker = OnnxModel("cross-encoder/ms-marco-MiniLM-L-6-v2")
+                else:
+                    from sentence_transformers import CrossEncoder
+                    reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2", device="cpu")
                 for question, contexts in zip(questions, retrieved):
                     # A cross-encoder sees query and passage together, directly modeling interactions.
                     # This can improve ordering/precision over independently embedded vector proximity.

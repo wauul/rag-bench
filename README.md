@@ -11,7 +11,7 @@ app_port: 8000
 
 Compare 2–4 retrieval configurations on one document set and one reference test set. Inspect real generated answers, retrieved passages and four Ragas metrics in a separate Streamlit dashboard.
 
-**Status:** Implementation and local retrieval verification are available. A successful full Groq/Ragas evaluation and live backend verification still require a Groq key and suitable hosting. No precomputed or fabricated scores are shipped.
+**Status:** Implementation, real local retrieval, compact-model agreement checks and automated UI/API tests are available. Full Groq/Ragas and live deployment verification are in progress. No precomputed or fabricated benchmark scores are shipped.
 
 ## Architecture
 
@@ -23,7 +23,7 @@ Streamlit dashboard → FastAPI → SQLite (documents, test sets, configurations
                              → Ragas + Groq judge + fixed local judge embeddings
 ```
 
-Generation and judging both use `llama-3.1-8b-instant` through Groq. Retrieval compares `sentence-transformers/all-MiniLM-L6-v2` with `BAAI/bge-small-en-v1.5`. Optional reranking uses `cross-encoder/ms-marco-MiniLM-L-6-v2`. All inference except generation/judging runs on the backend CPU. Streamlit only calls the API.
+Generation and judging both use `openai/gpt-oss-20b` through Groq. The originally requested `llama-3.1-8b-instant` was [retired for free/developer accounts on August 16, 2026](https://console.groq.com/docs/deprecations); GPT-OSS 20B is Groq's recommended replacement. Set `GROQ_MODEL` to select another model your account supports. Retrieval compares `sentence-transformers/all-MiniLM-L6-v2` with `BAAI/bge-small-en-v1.5`. Optional reranking uses `cross-encoder/ms-marco-MiniLM-L-6-v2`. All inference except generation/judging runs on the backend CPU. Streamlit only calls the API.
 
 ## Local setup (Python 3.11+)
 
@@ -113,13 +113,25 @@ Unit/API tests cover ingestion validation, malformed/blank/encrypted files, auth
 
 ## Free hosting and current deployment constraint
 
-`Dockerfile` and `render.yaml` are included for a single FastAPI service on Render. **Render free and Railway free currently offer only 512 MB / 0.5 GB RAM.** The real local retrieval check measured approximately **749–824 MB RSS on Windows**, before a full evaluation. Linux memory may differ, but these free plans are not a verified fit. Do not upgrade to a paid instance unless you intend to pay.
+**Render free and Railway free currently offer only 512 MB / 0.5 GB RAM.** The standard Sentence Transformers check measured approximately **749–824 MB RSS on Windows**, so `Dockerfile.render` provides a compact runtime using int8 ONNX exports of the same three models. It runs on CPU without importing PyTorch. `Dockerfile` retains the full Sentence Transformers runtime for local/larger hosts. `render.yaml` selects the compact image and the Free plan.
+
+The compact runtime measured approximately **320 MB RSS** with MiniLM, Chroma and all Ragas metrics loaded in the local check; deployed peak memory still needs verification. Original model tokenizers and pooling are preserved. Build-time ONNX weights come from each model's official Hugging Face repository; BGE is dynamically quantized during the build. Agreement checks across the ten sample questions and reference answers gave minimum cosine agreement **0.991 for MiniLM** and **0.986 for BGE** against the float32 Sentence Transformers implementation. The reranker's best passage was unchanged in the checked question. This is approximate inference, not bit-identical output; run provenance records `inference_backend` and `precision`.
+
+To reproduce the compact model checks locally:
+
+```powershell
+uv pip install --python .venv/Scripts/python.exe onnx==1.19.0
+.venv/Scripts/python.exe -m scripts.prepare_onnx
+.venv/Scripts/python.exe -m scripts.check_onnx
+# Select compact inference before starting FastAPI:
+$env:INFERENCE_BACKEND = "onnx"
+```
 
 Render free also has an ephemeral filesystem: SQLite data, Chroma collections and downloaded models disappear on restart/redeploy. It sleeps after inactivity. Railway's free usage allowance is limited. References: [Render free limits](https://render.com/docs/free), [Render compute plans](https://render.com/docs/compute-plans), [Railway pricing plans](https://docs.railway.com/pricing/plans).
 
-The approved backend target is a free Hugging Face Docker Space, subject to account availability; its [documented CPU Basic hardware](https://huggingface.co/docs/hub/spaces-overview) has 16 GB RAM. It still has ephemeral disk without paid storage. The dashboard remains on Streamlit Community Cloud.
+Hugging Face was considered as an alternative because its documentation lists free CPU Basic hardware. However, the actual new-account Space creation UI on September 15, 2026 restricted Docker and Gradio to a **paid** plan. No subscription was created. Render's compact runtime is the free deployment path being verified. The dashboard remains on Streamlit Community Cloud.
 
-### Hugging Face Spaces (approved free backend target)
+### Hugging Face Spaces (only for accounts already eligible for free Docker compute)
 
 1. Sign in to Hugging Face and create a public **Docker / Blank** Space named `rag-bench-api`, choosing **CPU Basic / Free**. If a free option is unavailable or payment is requested, stop.
 2. Upload this repository's `Dockerfile`, `README.md`, `backend/` and `sample_data/` to the Space. The README metadata sets Docker's app port to 8000. Alternatively authenticate with `hf auth login` using a write-scoped token and run `python -m scripts.deploy_hf YOUR_USERNAME/rag-bench-api` to create/upload the Space.
@@ -127,11 +139,11 @@ The approved backend target is a free Hugging Face Docker Space, subject to acco
 4. Wait for the Docker build; open the Space's direct `.hf.space` URL and append `/health` to check readiness. Use this direct host as Streamlit's `BACKEND_URL`.
 5. Set the same API token in Streamlit secrets. Verify the complete demo. Free Spaces may sleep and lose stored data on restart; export results.
 
-### Render (only if available resources can support the ML process)
+### Render Free (compact runtime)
 
 1. Connect GitHub at [Render](https://dashboard.render.com/).
-2. New → Blueprint → select this repository. Review `render.yaml`: the plan must remain **Free**.
-3. Add `GROQ_API_KEY`; Render generates `API_TOKEN`. Keep both secret.
+2. New → Blueprint → select this repository. Review `render.yaml`: the plan must remain **Free**. Alternatively use New Web Service → Public Git Repository → `https://github.com/wauul/rag-bench`, choose Docker, set Dockerfile path to `Dockerfile.render`, and select Free.
+3. Add `GROQ_API_KEY` and `API_TOKEN` as environment secrets. Blueprints generate the API token automatically; manual setup needs a random token. Keep both secret.
 4. Deploy, check `/health`, then run the actual demo and check for memory failures. A green health check alone does not prove the ML workload works.
 5. Copy the backend URL and API token into Streamlit secrets.
 
