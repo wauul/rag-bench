@@ -111,6 +111,10 @@ Run states: `queued`, `running`, `completed`, `partial`, `failed`. A busy worker
 
 Unit/API tests cover ingestion validation, malformed/blank/encrypted files, auth, missing keys, non-finite metric errors, partial averages, restart behavior and CSV formula escaping. The retrieval check downloads both real embedding models, exercises ten questions per model in persistent Chroma, checks token windows, and runs a real cross-encoder. These checks do **not** replace the full Groq/Ragas demo. `run_demo` requires 20 complete rows, nonzero mean scores and a working CSV endpoint, and saves results locally under ignored `data/`.
 
+To verify a demo already started through the dashboard, set `BACKEND_URL` to that backend and run `python -m scripts.run_demo RUN_ID`. It checks all 80 finite scores and saves JSON plus CSV.
+
+For a **local** partial run with all retrieval rows stored, stop the local API, wait for Groq quota to recover, and run `python -m scripts.retry_failed RUN_ID`. This keeps successful answers/scores, retries missing generation or metrics using the original stored passages, and retains prior failures in `retry_history`. It rejects changed model/backend/prompt settings. Restart the API to inspect the recovered result. It cannot recover remote runs or missing retrieval rows; remote partial runs currently require a fresh evaluation.
+
 ## Free hosting and current deployment constraint
 
 **Render free and Railway free currently offer only 512 MB / 0.5 GB RAM.** The standard Sentence Transformers check measured approximately **749–824 MB RSS on Windows**, so `Dockerfile.render` provides a compact runtime using int8 ONNX exports of the same three models. It runs on CPU without importing PyTorch. `Dockerfile` retains the full Sentence Transformers runtime for local/larger hosts. `render.yaml` selects the compact image and the Free plan.
