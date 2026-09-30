@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 from sentence_transformers import CrossEncoder
 from backend.models import MODELS
-from backend.pipeline import load_embedder, embed
+from backend.retrieval import load_embedder, embed
 from backend.onnx_inference import OnnxModel, RERANKER
 
 

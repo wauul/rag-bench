@@ -17,7 +17,11 @@ Compare 2–4 retrieval configurations on one document set and one reference tes
 - [FastAPI documentation](https://rag-bench-api.onrender.com/docs)
 - [GitHub repository](https://github.com/wauul/rag-bench)
 
-The successful local run is `6b74daea575e4a09842f4953c4b05f07`. Its real JSON and CSV exports are saved under the local ignored `data/` directory. MiniLM's equal-weight mean was 0.9504 and BGE with reranking was 0.9435 on this small sample; this is not a general model-quality claim.
+The previously successful local run is `6b74daea575e4a09842f4953c4b05f07`. Its real JSON and CSV exports were saved under the original local ignored `data/` directory. MiniLM's equal-weight mean was 0.9504 and BGE with reranking was 0.9435 on that small sample; this is not a general model-quality claim. Those results predate the larger reranking candidate pool below.
+
+### Current development changes
+
+Configurations now separate **retrieval candidates** (`candidate_k`, 1–40) from **final passages** (`context_k`, 1–8). Reranking selects the final passages from the larger pool. The dashboard includes paginated **History**, **Retry missing work**, **Cancel run**, and separate processed/fully-scored progress counts. Generation and individual metric results are checkpointed to SQLite. The Dev Container installs both applications and starts both servers. These changes have automated coverage; a new live Groq benchmark and hosted deployment remain unverified.
 
 ## Architecture
 
@@ -57,19 +61,19 @@ Start two terminals from the repository root:
 
 Open [the dashboard](http://localhost:8501) and click **Try it now**. It uploads the fictional Harbor Community Lab handbook, stores ten reference questions, creates two configurations, and immediately starts a real evaluation. First use downloads all three open models to the Hugging Face cache (`~/.cache/huggingface`); allow several hundred MB of downloads and several GB for installed dependencies. CPU execution and Groq quota pacing can make a full run take many minutes.
 
-Chroma persists vectors under `data/chroma`; metadata and complete result rows persist in `data/bench.sqlite3`. Collection names include both run and configuration UUIDs. Model downloads are reused. Keep **one backend process/worker**; the executor serializes runs. A restart marks interrupted runs failed while preserving completed rows.
+Chroma persists vectors under `data/chroma`; metadata and result checkpoints persist in `data/bench.sqlite3`. Collection names include both run and configuration UUIDs. Model downloads are reused. Keep **one backend process/worker**; the executor serializes runs. A restart marks interrupted runs failed while preserving saved passages, answers and individual metric scores. Use **Retry missing work** to resume them.
 
 ## Add your data
 
 1. **Upload / Setup:** upload 1–10 PDFs, TXT or Markdown files (UTF-8). Limits: 5 MB/file, 100 pages/PDF and 150,000 extracted characters/set. Scanned PDFs need OCR outside this tool.
 2. Upload a CSV with `question,reference` columns (`expected_answer` is an alias), upload a JSON array of those objects, or enter pairs in the editable table. Accepts 1–20 questions. `sample_data/questions.json` is a complete example.
-3. Add 2–4 configurations: chunk tokens, overlap, model, top-k and reranking. Change one parameter at a time for controlled experiments.
-4. Open **Run**, start evaluation, and retain the run ID. Progress polls automatically. Use the run ID to reopen results after a browser session ends.
+3. Add 2–4 configurations: chunk tokens, overlap, model, final passage count, candidate count and reranking. Change one parameter at a time for controlled experiments.
+4. Open **Run** and start evaluation. Progress polls automatically and distinguishes processed answers from fully scored answers. Reopen saved runs through **History**, or use a run ID. Cancel or retry missing work from **Run** or **Results**.
 5. Open **Results** for metric means, valid counts, bars/radar, reference answers and passages side by side. CSV exports contain one row per configuration/question, all scores, contexts, errors and latency.
 
 The sample compares multiple changes at once to demonstrate the interface; its winner cannot establish which individual setting caused an improvement.
 
-Both demo configurations retrieve two candidates per question to conserve free judge quota. The setup form supports top-k values from one to eight for custom experiments.
+Both demo configurations send two final passages per question to conserve free judge quota. MiniLM retrieves two candidates; BGE reranks twelve candidates and keeps two. Custom configurations support 1–40 candidates and 1–8 final passages, with candidates at least as large as the final count. Without reranking, the dashboard uses the final count as the candidate count.
 
 ## What the metrics mean
 
@@ -88,7 +92,9 @@ We pin Ragas 0.3.9 and use its real single-turn metric API. To conserve free quo
 
 Sliding windows use one shared MiniLM WordPiece tokenizer, with configurable overlap. Source substrings retain original case and page metadata. Windows stop at document/page boundaries. Sizes are limited to 32–240 tokens to fit MiniLM's 256-token window; overlap must be smaller than the size. Long questions may be truncated by embedding models, so keep questions concise.
 
-BGE queries receive its retrieval instruction prefix. Both models output normalized vectors; Chroma uses cosine distance. Reranking scores the **same top-k candidates**, then reorders them. A cross-encoder sees query and passage together, which can improve ranking precision over comparing independent embeddings. It cannot recover chunks outside this candidate pool; it does not change pool recall directly.
+BGE queries receive its retrieval instruction prefix. Both models output normalized vectors; Chroma uses cosine distance. Retrieve `candidate_k` chunks, optionally score/order them with a cross-encoder, then keep `context_k` passages for generation and evaluation. A larger candidate pool lets reranking select evidence that would have been omitted by a smaller vector-only top-k. It still cannot recover chunks outside that candidate pool. If a document produces fewer chunks than requested, use the available chunks.
+
+Legacy API input and stored configurations using `top_k` remain supported: it becomes both the candidate count and the final count, preserving their previous behavior. New configuration responses and run snapshots use `candidate_k` and `context_k`. Supplying conflicting `top_k` and `context_k` is rejected.
 
 ## API
 
@@ -102,11 +108,16 @@ Interactive docs: [localhost:8000/docs](http://localhost:8000/docs).
 | `POST /api/configurations` | JSON configuration → stored configuration |
 | `POST /api/demo` | Creates the sample data and two configurations |
 | `POST /api/runs` | `{document_set_id, test_set_id, configuration_ids}` → run ID (202) |
+| `GET /api/runs` | Paginated compact history; `limit` (1–100), `offset`; returns `{runs, next_offset}` |
+| `POST /api/runs/{id}/retry` | Resume a partial, failed or cancelled run using saved work (202) |
+| `POST /api/runs/{id}/cancel` | Request cancellation between operations, preserving results (202) |
 | `GET /api/runs/{id}` | Status, progress, configuration snapshots, provenance, summary, per-question results |
 | `GET /api/runs/{id}/export` | CSV, including partial rows if available |
 | `GET /health` | Lightweight readiness and key-presence check; does not call Groq |
 
-Run states: `queued`, `running`, `completed`, `partial`, `failed`. A busy worker returns 409; a missing Groq key returns 503; invalid input returns 422. The API never sends its Groq key to Streamlit. Set `API_TOKEN` to require a bearer token on all `/api` endpoints when publicly hosting. Give the dashboard the same token through secrets.
+Run states: `queued`, `running`, `completed`, `partial`, `failed`, `cancelled`. A busy worker or incompatible retry returns 409; a missing Groq key returns 503; invalid input returns 422. A cancellation request does not interrupt an in-flight model or judge call: its result is saved before the worker stops. Runs expose `retrieved`, `completed` (processed answers), `scored` (fully successful answers), `valid_scores`, and a live `cancel_requested` flag. The API never sends its Groq key to Streamlit. Set `API_TOKEN` to require a bearer token on all `/api` endpoints when publicly hosting. Give the dashboard the same token through secrets.
+
+Startup validates `INFERENCE_BACKEND` (`sentence-transformers` or `onnx`), a nonempty `GROQ_MODEL`, finite `GROQ_REQUEST_INTERVAL` of at least 0.1 seconds, and integer `JUDGE_EXAMPLES` in 0–3. Invalid settings name the offending variable before a worker starts.
 
 ## Verification
 
@@ -117,11 +128,17 @@ Run states: `queued`, `running`, `completed`, `partial`, `failed`. A busy worker
 .venv/Scripts/python.exe -m scripts.run_demo
 ```
 
-Unit/API tests cover ingestion validation, malformed/blank/encrypted files, auth, missing keys, non-finite metric errors, partial averages, restart behavior and CSV formula escaping. The retrieval check downloads both real embedding models, exercises ten questions per model in persistent Chroma, checks token windows, and runs a real cross-encoder. These checks do **not** replace the full Groq/Ragas demo. `run_demo` requires 20 complete rows, nonzero mean scores and a working CSV endpoint, and saves results locally under ignored `data/`.
+The current automated suite has 33 passing tests covering ingestion validation, malformed/blank/encrypted files, auth, missing keys, settings, non-finite metric errors, partial averages, checkpointed retry/cancellation, restart recovery, history pagination, dashboard actions and CSV formula escaping. A real persistent Chroma test uses deterministic tiny vectors to verify selection from a larger candidate pool without downloading models. The separate retrieval check downloads both real embedding models, exercises ten questions per model, checks token windows, and runs a real cross-encoder. These checks do **not** replace the full Groq/Ragas demo. `run_demo` requires 20 complete rows, nonzero mean scores and a working CSV endpoint, and saves results locally under ignored `data/`.
 
 To verify a demo already started through the dashboard, set `BACKEND_URL` to that backend and run `python -m scripts.run_demo RUN_ID`. It checks all 80 finite scores and saves JSON plus CSV.
 
-For a **local** partial run with all retrieval rows stored, stop the local API, wait for Groq quota to recover, and run `python -m scripts.retry_failed RUN_ID`. This keeps successful answers/scores, retries missing generation or metrics using the original stored passages, and retains prior failures in `retry_history`. It rejects changed model/backend/prompt settings. Restart the API to inspect the recovered result. It cannot recover remote runs or missing retrieval rows; remote partial runs currently require a fresh evaluation.
+After Groq quota recovers, use **Retry missing work** or `POST /api/runs/{id}/retry`. This keeps successful answers/scores, uses the original stored passages, fills missing retrieval rows, and retains previous row attempts in `retry_history`. It accepts partial, failed and cancelled runs, including restart interruptions, while rejecting changed model/backend/judge settings. Complete runs cannot be retried. A retry needs the original document set only when retrieval rows are missing. It cannot restore data lost by an ephemeral host.
+
+For offline **local** recovery, stop the local API and run `python -m scripts.retry_failed RUN_ID`, then restart the API. The command uses the same execution/checkpoint code as API retry. Both paths preserve existing configuration snapshots; previously saved `top_k` runs keep their smaller candidate pools.
+
+### Dev Container / Codespaces
+
+Opening the Dev Container installs CPU Torch plus the backend and dashboard requirements. On container startup it launches one FastAPI worker on port 8000 and Streamlit on port 8501; both ports are forwarded. Logs are under ignored `.tools/backend.log` and `.tools/dashboard.log`. Configure `GROQ_API_KEY` in `.env` or the container environment before starting a benchmark. The dashboard and ingestion/history can open without a Groq key. After changing backend settings, restart the backend/container.
 
 ## Free hosting and current deployment constraint
 
@@ -178,7 +195,7 @@ API_TOKEN = "SAME-TOKEN-AS-BACKEND"
 - Small English embedding models and compact judge prompts prioritize free CPU/quota use. LLM judges can be inconsistent or wrong; same-model judging can introduce correlated bias. Reference quality matters. No confidence intervals or human validation are implied.
 - Groq generation and judging both consume free API quota; this tool makes multiple requests per answer. Default pacing is one request every four seconds, sequential scoring, with bounded SDK retries. Daily quotas may still run out. Adjust `GROQ_REQUEST_INTERVAL` conservatively.
 - Local sequential model loading limits simultaneous weight memory, but Python/PyTorch may retain allocations. Provision adequate RAM.
-- Intended as a small shared internal tool, not a multi-tenant service. No per-user data isolation, cancellation, distributed queue, automatic retention policy or resume after backend restart. Run IDs are shared workspace identifiers.
+- Intended as a small shared internal tool, not a multi-tenant service. No per-user data isolation, distributed queue or automatic retention policy. Cancellation is cooperative and resumption is explicitly requested. Run IDs and history are shared workspace identifiers.
 - Public dashboard visitors share the backend's free quota. Use Streamlit access restrictions for private use. Uploaded text, questions, references and generated answers are sent to Groq for generation/evaluation; use appropriate non-sensitive benchmark data.
 - Stored data persists locally until removed; long-lived instances need manual retention/cleanup when idle. Free ephemeral hosting is unsuitable for durable records. Export results promptly.
 - PDF text extraction does not provide OCR or sophisticated table reconstruction. Chunking is token-window-based, not semantic segmentation.

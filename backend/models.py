@@ -1,5 +1,5 @@
 from typing import Literal
-from pydantic import BaseModel, Field, model_validator
+from pydantic import AliasChoices, BaseModel, Field, model_validator
 
 MODELS = ["sentence-transformers/all-MiniLM-L6-v2", "BAAI/bge-small-en-v1.5"]
 METRICS = ["faithfulness", "answer_relevancy", "context_precision", "context_recall"]
@@ -22,12 +22,30 @@ class Configuration(BaseModel):
     overlap: int = Field(default=32, ge=0)
     embedding_model: Literal["sentence-transformers/all-MiniLM-L6-v2", "BAAI/bge-small-en-v1.5"] = MODELS[0]
     rerank: bool = False
-    top_k: int = Field(default=3, ge=1, le=8)
+    context_k: int = Field(default=3, ge=1, le=8,
+                           validation_alias=AliasChoices("context_k", "top_k"))
+    candidate_k: int | None = Field(default=None, ge=1, le=40)
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_legacy_top_k(cls, data):
+        if isinstance(data, dict) and "top_k" in data and "context_k" in data:
+            if data["top_k"] != data["context_k"]:
+                raise ValueError("top_k and context_k must agree when both are supplied")
+        return data
 
     @model_validator(mode="after")
     def check_overlap(self):
         if self.overlap >= self.chunk_size:
             raise ValueError("Overlap must be smaller than chunk size")
+        if not self.name.strip():
+            raise ValueError("Configuration name cannot be blank")
+        self.name = self.name.strip()
+        # Old stored configurations retain their original candidate pool and results.
+        if self.candidate_k is None:
+            self.candidate_k = self.context_k
+        if self.candidate_k < self.context_k:
+            raise ValueError("Candidate count must be at least the final passage count")
         return self
 
 

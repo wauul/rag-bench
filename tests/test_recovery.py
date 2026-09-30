@@ -1,4 +1,5 @@
 from copy import deepcopy
+from types import SimpleNamespace
 import pytest
 from backend.models import METRICS
 from backend.storage import Store
@@ -12,7 +13,8 @@ def test_recovery_preserves_successful_scores_and_failure_history(tmp_path, monk
     monkeypatch.setenv("JUDGE_EXAMPLES", "0")
     store = Store(tmp_path)
     good = {"configuration_id": "cfg", "question_index": 0, "scores": {m: 0.75 for m in METRICS},
-            "errors": {}, "answer": "Original answer", "latency_seconds": 1}
+            "errors": {}, "answer": "Original answer", "latency_seconds": 1,
+            "question": "What is this?", "reference": "A lab", "contexts": [{"text": "A lab"}]}
     bad = deepcopy(good)
     bad.update(question_index=1, errors={"faithfulness": "RateLimitError"})
     bad["scores"]["faithfulness"] = None
@@ -21,13 +23,14 @@ def test_recovery_preserves_successful_scores_and_failure_history(tmp_path, monk
         "questions": [{}, {}], "configurations": [{"id": "cfg", "name": "Config"}],
         "provenance": {"generator": "qwen/qwen3.8-27b", "judge": "qwen/qwen3.8-27b",
                        "inference_backend": "sentence-transformers", "judge_prompt_examples": 0}})
-    monkeypatch.setattr(pipeline, "make_llm", lambda: object())
+    monkeypatch.setattr(pipeline, "make_llm", lambda: SimpleNamespace(invoke=lambda _: None))
     monkeypatch.setattr(pipeline, "load_embedder", lambda _: object())
     monkeypatch.setattr(pipeline, "make_metrics", lambda *_: dict.fromkeys(METRICS))
     calls = []
 
-    async def score(metrics, row):
+    async def score(metrics, row, on_score=None, checkpoint=None):
         calls.append((list(metrics), row["question_index"]))
+        on_score("faithfulness", 0.5, None)
         return {"faithfulness": 0.5}, {}
 
     monkeypatch.setattr(pipeline, "score_row", score)
@@ -40,6 +43,7 @@ def test_recovery_preserves_successful_scores_and_failure_history(tmp_path, monk
     assert saved["status"] == "completed"
 
     saved["status"] = "partial"
+    saved["rows"][1]["scores"]["faithfulness"] = None
     store.save("run", saved, run["id"])
     monkeypatch.setenv("GROQ_MODEL", "different-model")
     with pytest.raises(ValueError, match="original model"):

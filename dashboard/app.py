@@ -1,5 +1,6 @@
 """Presentation only: ingestion, configuration validation and evaluations live in FastAPI."""
 import os
+import math
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -62,7 +63,7 @@ st.markdown("""<style>
 with st.sidebar:
     st.markdown("## ◈ RAG Bench")
     st.caption("EVIDENCE OVER INTUITION")
-    page = st.radio("Workspace", ["Upload / Setup", "Run", "Results"], key="page")
+    page = st.radio("Workspace", ["Upload / Setup", "Run", "Results", "History"], key="page")
     st.divider()
     st.caption("Local embeddings · ChromaDB\n\nGroq generation · Ragas evaluation")
     st.info("Real evaluations use Groq quota and may take several minutes. First use also downloads local models.")
@@ -114,17 +115,22 @@ def setup():
     st.subheader("3. Configurations")
     st.caption("Define 2–4 configurations. Chunk sizes use a shared WordPiece tokenizer (32–240 tokens).")
     st.session_state.setdefault("configs", [])
+    rerank = st.checkbox("Cross-encoder reranking", key="configuration_rerank")
     with st.form("configuration"):
-        cols = st.columns([2, 2, 1, 1, 1])
+        cols = st.columns([2, 2, 1, 1])
         name = cols[0].text_input("Name", value=f"Configuration {len(st.session_state.configs) + 1}")
         model = cols[1].selectbox("Embedding model", MODELS)
         size = cols[2].number_input("Chunk tokens", 32, 240, 192)
         overlap = cols[3].number_input("Overlap", 0, 239, 32)
-        top_k = cols[4].number_input("Top-k", 1, 8, 3)
-        rerank = st.checkbox("Cross-encoder reranking")
+        passage_cols = st.columns(2)
+        context_k = passage_cols[0].number_input("Final passages", 1, 8, 3,
+            help="Passages supplied to answer generation and all judge metrics.")
+        candidate_k = passage_cols[1].number_input("Retrieval candidates", 1, 40, 20,
+            disabled=not rerank, help="Retrieve this pool, rerank it, then keep the final passages.")
         if st.form_submit_button("Add configuration", disabled=len(st.session_state.configs) >= 4):
             result = api("POST", "/api/configurations", json={"name": name, "embedding_model": model,
-                "chunk_size": size, "overlap": overlap, "top_k": top_k, "rerank": rerank}).json()
+                "chunk_size": size, "overlap": overlap, "context_k": context_k,
+                "candidate_k": candidate_k if rerank else context_k, "rerank": rerank}).json()
             st.session_state.configs.append(result)
     if st.session_state.configs:
         st.dataframe(pd.DataFrame(st.session_state.configs).drop(columns="id"), hide_index=True, width="stretch")
@@ -143,7 +149,8 @@ def run_page():
         result = api("POST", "/api/runs", json={"document_set_id": st.session_state.document_set_id,
             "test_set_id": st.session_state.test_set_id, "configuration_ids": [c["id"] for c in st.session_state.configs]}).json()
         st.session_state.run_id = result["id"]
-    with st.expander("Resume an existing run"):
+    st.caption("Find saved benchmarks in History, or reopen one by ID below.")
+    with st.expander("Open an existing run"):
         existing = st.text_input("Run ID")
         if st.button("Load run", disabled=not existing):
             api("GET", f"/api/runs/{existing}")
@@ -152,20 +159,46 @@ def run_page():
         poll_run()
 
 
+def run_controls(run):
+    if run["status"] in {"queued", "running"}:
+        if run.get("cancel_requested"):
+            st.info("Cancellation requested. The current operation will finish and save its result first.")
+        if st.button("Cancel run", key=f"cancel_{run['id']}", disabled=run.get("cancel_requested", False)):
+            api("POST", f"/api/runs/{run['id']}/cancel")
+            st.rerun()
+    elif run["status"] in {"partial", "failed", "cancelled"}:
+        st.caption("Resume saved passages and answers, retrying only missing scores. The original model and judge settings must match.")
+        if st.button("Retry missing work", key=f"retry_{run['id']}"):
+            api("POST", f"/api/runs/{run['id']}/retry")
+            st.session_state.run_id = run["id"]
+            st.rerun()
+
+
+def score_counts(run):
+    rows = run["rows"]
+    valid = sum(v is not None and math.isfinite(v) for r in rows for v in r["scores"].values())
+    scored = sum(bool(r["answer"]) and not r["errors"] and
+                 all(r["scores"].get(m) is not None and math.isfinite(r["scores"][m]) for m in METRICS) for r in rows)
+    return scored, valid
+
+
 @st.fragment(run_every="5s")
 def poll_run():
     try:
         run = api("GET", f"/api/runs/{st.session_state.run_id}").json()
         st.code(run["id"], language=None)
         st.progress(run["completed"] / run["total"], text=run["stage"])
-        cols = st.columns(3)
+        scored, valid = score_counts(run)
+        cols = st.columns(4)
         cols[0].metric("Status", run["status"].title())
-        cols[1].metric("Scored answers", f"{run['completed']} / {run['total']}")
-        cols[2].metric("Configurations", len(run["configurations"]))
+        cols[1].metric("Processed answers", f"{run['completed']} / {run['total']}")
+        cols[2].metric("Fully scored answers", f"{scored} / {run['total']}")
+        cols[3].metric("Valid scores", f"{valid} / {run['total'] * len(METRICS)}")
         if run["status"] == "completed":
             st.success("Evaluation complete. Open Results to compare configurations.")
-        elif run["status"] in {"partial", "failed"}:
+        elif run["status"] in {"partial", "failed", "cancelled"}:
             st.warning(run.get("error", "Some scores are unavailable. Inspect errors in Results."))
+        run_controls(run)
     except (requests.RequestException, RuntimeError) as exc:
         st.error(str(exc))
 
@@ -173,12 +206,14 @@ def poll_run():
 def results():
     st.markdown('<p class="eyebrow">03 / FOLLOW THE EVIDENCE</p>', unsafe_allow_html=True)
     st.title("See what actually worked.")
-    run_id = st.text_input("Run ID", value=st.session_state.get("run_id", ""))
+    run_id = st.text_input("Run ID", value=st.session_state.get("run_id", ""), key="results_run_id")
     if not run_id:
         st.info("Run a benchmark first. Its summary and every retrieved passage will appear here.")
         return
     run = api("GET", f"/api/runs/{run_id}").json()
-    st.caption(f"{run['status'].title()} · {run['completed']}/{run['total']} answers · {run['created_at']}")
+    scored, valid = score_counts(run)
+    st.caption(f"{run['status'].title()} · {run['completed']}/{run['total']} processed · {scored} fully scored · {valid} valid scores · {run['created_at']}")
+    run_controls(run)
     if not run["rows"]:
         st.info(run.get("error", run["stage"]))
         return
@@ -224,7 +259,7 @@ def results():
             if not row:
                 st.caption("Not evaluated yet")
                 continue
-            st.write(row["answer"] or "Generation unavailable")
+            st.write(row["answer"] or ("Generation pending" if run["status"] in {"queued", "running"} else "Generation unavailable"))
             st.dataframe(pd.DataFrame([{"Metric": LABELS[m], "Score": row["scores"][m]} for m in METRICS]), hide_index=True)
             st.caption(f"Generation + evaluation: {row['latency_seconds']:.1f}s")
             if row["errors"]:
@@ -239,8 +274,45 @@ def results():
     st.download_button("Download full results CSV", csv, file_name=f"rag-bench-{run_id}.csv", mime="text/csv")
 
 
+def open_saved_run(run_id, destination):
+    st.session_state.run_id = run_id
+    st.session_state.results_run_id = run_id
+    st.session_state.page = destination
+
+
+def history():
+    st.markdown('<p class="eyebrow">04 / YOUR BENCHMARK HISTORY</p>', unsafe_allow_html=True)
+    st.title("Pick up where you left off.")
+    st.caption("Saved runs in this shared workspace. Open results or resume missing work from the Run page.")
+    st.button("Refresh history")
+    offset = st.session_state.get("history_offset", 0)
+    response = api("GET", "/api/runs", params={"limit": 20, "offset": offset}).json()
+    runs = response["runs"]
+    if runs:
+        st.dataframe(pd.DataFrame([{"Created": r["created_at"], "Status": r["status"],
+            "Processed": f"{r['completed']}/{r['total']}",
+            "Fully scored": r.get("scored") if r.get("scored") is not None else "—",
+            "Configurations": ", ".join(c["name"] for c in r["configurations"]),
+            "Run ID": r["id"]} for r in runs]), hide_index=True, width="stretch")
+        choices = {r["id"]: r for r in runs}
+        selected = st.selectbox("Saved run", list(choices),
+            format_func=lambda rid: f"{choices[rid]['created_at']} · {choices[rid]['status']} · {rid[:8]}")
+        left, right = st.columns(2)
+        left.button("Open results", on_click=open_saved_run, args=(selected, "Results"))
+        right.button("Open run", on_click=open_saved_run, args=(selected, "Run"))
+    else:
+        st.info("No saved runs on this page. Start a benchmark in Setup.")
+    left, right = st.columns(2)
+    if left.button("Newer runs", disabled=offset == 0):
+        st.session_state.history_offset = max(0, offset - 20)
+        st.rerun()
+    if right.button("Older runs", disabled=response["next_offset"] is None):
+        st.session_state.history_offset = response["next_offset"]
+        st.rerun()
+
+
 try:
-    {"Upload / Setup": setup, "Run": run_page, "Results": results}[page]()
+    {"Upload / Setup": setup, "Run": run_page, "Results": results, "History": history}[page]()
 except (requests.RequestException, RuntimeError) as exc:
     st.error(str(exc))
     st.caption("Check backend availability, API_TOKEN, and GROQ_API_KEY configuration. Free hosting may need time to wake up.")

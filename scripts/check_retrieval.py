@@ -9,7 +9,7 @@ import chromadb
 from chromadb.config import Settings
 from sentence_transformers import CrossEncoder
 from backend.models import Configuration, MODELS
-from backend.pipeline import chunk_documents, embed, load_embedder
+from backend.retrieval import chunk_documents, embed, load_embedder
 from backend.ingestion import extract_document
 
 

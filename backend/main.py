@@ -10,24 +10,29 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import pandas as pd
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from backend.ingestion import MAX_BYTES, MAX_TEXT, extract_document, parse_test_set
 from backend.models import Configuration, RunRequest, TestSet
 from backend.storage import Store
+from backend.run_state import ACTIVE_STATES, validate_retry
+from backend.settings import load_settings
 
 store = Store()
 executor = ThreadPoolExecutor(max_workers=1)
 run_lock = threading.Lock()
+control_lock = threading.Lock()
+cancel_events = {}
 sample_dir = Path(__file__).resolve().parents[1] / "sample_data"
 
 
 @asynccontextmanager
 async def lifespan(app):
+    load_settings()
     # A killed process cannot resume its in-memory worker. Keep partial rows, mark honestly.
     for run in store.list("run"):
         if run["status"] in {"queued", "running"}:
-            run.update(status="failed", stage="Server restarted; start a new run", error="Interrupted by server restart")
+            run.update(status="failed", stage="Server restarted; retry to resume saved work", error="Interrupted by server restart")
             store.save("run", run, run["id"])
     yield
 
@@ -95,33 +100,58 @@ def configurations(body: Configuration):
 def demo():
     doc = store.save("documents", {"documents": extract_document("harbor-handbook.txt", (sample_dir / "harbor-handbook.txt").read_bytes())})
     test = test_sets(TestSet(**json.loads((sample_dir / "questions.json").read_text(encoding="utf-8"))))
-    # Two candidates keep the ten-question demo within modest free judge quotas.
-    configs = [configurations(Configuration(name="MiniLM · 96 tokens", chunk_size=96, overlap=16, top_k=2)),
-               configurations(Configuration(name="BGE · 192 + rerank", embedding_model="BAAI/bge-small-en-v1.5", rerank=True, top_k=2))]
+    # Two final passages keep judge quota modest; reranking can select from a larger pool.
+    configs = [configurations(Configuration(name="MiniLM · 96 tokens", chunk_size=96, overlap=16, context_k=2)),
+               configurations(Configuration(name="BGE · 192 + rerank", embedding_model="BAAI/bge-small-en-v1.5", rerank=True, context_k=2, candidate_k=12))]
     return {"document_set_id": doc["id"], "test_set_id": test["id"],
             "configuration_ids": [c["id"] for c in configs], "configurations": configs,
             "questions": test["questions"]}
 
 
-def worker(run_id):
+def worker(run_id, cancel_event, retry=False):
     try:
         from backend.pipeline import execute_run
-        execute_run(store, run_id)
+        execute_run(store, run_id, cancel_event=cancel_event, retry=retry)
     except Exception as exc:
         run = store.get("run", run_id)
         run.update(status="failed", error=type(exc).__name__ + ": worker could not start", stage="Worker failed")
         store.save("run", run, run_id)
     finally:
-        run_lock.release()
+        with control_lock:
+            cancel_events.pop(run_id, None)
+            run_lock.release()
+
+
+def submit_run(run, retry=False):
+    event = threading.Event()
+    with control_lock:
+        cancel_events[run["id"]] = event
+    try:
+        executor.submit(worker, run["id"], event, retry)
+    except Exception:
+        with control_lock:
+            cancel_events.pop(run["id"], None)
+        run.update(status="failed", stage="Worker could not be queued", error="Worker submission failed")
+        store.save("run", run, run["id"])
+        raise
+
+
+def require_generation():
+    if not os.getenv("GROQ_API_KEY"):
+        raise HTTPException(503, "Set GROQ_API_KEY on the backend before running evaluations")
+    try:
+        return load_settings()
+    except ValueError as exc:
+        raise HTTPException(503, str(exc))
 
 
 @app.post("/api/runs", dependencies=auth, status_code=202)
 def start_run(body: RunRequest):
-    if not os.getenv("GROQ_API_KEY"):
-        raise HTTPException(503, "Set GROQ_API_KEY on the backend before running evaluations")
+    settings = require_generation()
     fetch("documents", body.document_set_id)
     test = fetch("test_set", body.test_set_id)
-    configs = [fetch("configuration", cid) for cid in body.configuration_ids]
+    configs = [{**Configuration(**fetch("configuration", cid)).model_dump(), "id": cid}
+               for cid in body.configuration_ids]
     if len({c["name"].strip().casefold() for c in configs}) != len(configs):
         raise HTTPException(422, "Configuration names must be distinct for comparison charts")
     if not run_lock.acquire(blocking=False):
@@ -131,24 +161,66 @@ def start_run(body: RunRequest):
         run = store.save("run", {**body.model_dump(), "configurations": configs, "questions": test["questions"],
             "status": "queued", "stage": "Queued", "created_at": now(), "completed": 0,
             "total": len(configs) * len(test["questions"]), "rows": [], "summary": [],
-            "provenance": {"generator": os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b"), "judge": os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b"),
-                "ragas": "0.3.9", "relevancy_embeddings": "sentence-transformers/all-MiniLM-L6-v2",
-                "inference_backend": os.getenv("INFERENCE_BACKEND", "sentence-transformers"),
-                "precision": "dynamic-int8" if os.getenv("INFERENCE_BACKEND") == "onnx" else "float32",
-                "generator_temperature": 0, "judge_temperature": "Ragas default per metric",
-                "judge_prompt_examples": max(0, int(os.getenv("JUDGE_EXAMPLES", "0"))),
-                "reasoning_effort": "none" if os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b").startswith("qwen/") else "low",
-                "relevancy_strictness": 3}})
-        executor.submit(worker, run["id"])
+            "attempt": 1, "retrieved": 0, "scored": 0, "valid_scores": 0,
+            "provenance": settings.provenance()})
+        submit_run(run)
     except Exception:
         run_lock.release()
         raise
     return {"id": run["id"], "status": run["status"]}
 
 
+@app.get("/api/runs", dependencies=auth)
+def list_runs(limit: int = Query(default=50, ge=1, le=100), offset: int = Query(default=0, ge=0)):
+    items = store.run_history(limit + 1, offset)
+    return {"runs": items[:limit], "next_offset": offset + limit if len(items) > limit else None}
+
+
+@app.post("/api/runs/{run_id}/retry", dependencies=auth, status_code=202)
+def retry_run(run_id: str):
+    require_generation()
+    if not run_lock.acquire(blocking=False):
+        raise HTTPException(409, "An evaluation is already running. Wait for it to finish.")
+    try:
+        run = fetch("run", run_id)
+        try:
+            validate_retry(run)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc))
+        if len(run["rows"]) < run["total"]:
+            fetch("documents", run["document_set_id"])
+        from backend.pipeline import now
+        run.update(status="queued", stage="Queued to resume missing work",
+                   attempt=run.get("attempt", 1) + 1, retried_at=now())
+        run.pop("error", None)
+        run.pop("finished_at", None)
+        store.save("run", run, run_id)
+        submit_run(run, retry=True)
+    except Exception:
+        run_lock.release()
+        raise
+    return {"id": run_id, "status": "queued"}
+
+
+@app.post("/api/runs/{run_id}/cancel", dependencies=auth, status_code=202)
+def cancel_run(run_id: str):
+    # The worker owns persisted run data; an event avoids overwriting in-flight results.
+    with control_lock:
+        run = fetch("run", run_id)
+        event = cancel_events.get(run_id)
+        if run["status"] not in ACTIVE_STATES or event is None:
+            raise HTTPException(409, "This run is not active")
+        event.set()
+    return {"id": run_id, "status": run["status"], "cancel_requested": True}
+
+
 @app.get("/api/runs/{run_id}", dependencies=auth)
 def get_run(run_id: str):
-    return fetch("run", run_id)
+    run = fetch("run", run_id)
+    with control_lock:
+        event = cancel_events.get(run_id)
+        run["cancel_requested"] = event is not None and event.is_set()
+    return run
 
 
 def spreadsheet_safe(value):
