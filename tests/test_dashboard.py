@@ -51,7 +51,9 @@ def test_results_table_chart_and_drilldown(monkeypatch):
         assert not app.exception
         assert "A, B" in app.success[0].value
         assert len(app.get("plotly_chart")) == 1
-        assert len(app.dataframe) >= 3
+        assert len(app.dataframe) == 2
+        assert any(t.value == "A test passage" for t in app.text)
+        assert [tab.label for tab in app.tabs] == ["Score overview", "Inspect answers"]
         next(r for r in app.radio if r.label == "Comparison view").set_value("Radar").run()
         assert not app.exception
         assert len(app.get("plotly_chart")) == 1
@@ -141,3 +143,91 @@ def test_history_opens_results_and_supports_retry_cancel_and_progress(monkeypatc
         assert not app.exception and ("POST", "/api/runs/saved/cancel") in calls
         assert next(b for b in app.button if b.label == "Cancel run").disabled
         assert any("Cancellation requested" in i.value for i in app.info)
+        run.update(status="completed", stage="Complete")
+        app.run()
+        next(b for b in app.button if b.label == "View results").click().run()
+        assert not app.exception
+        assert next(r for r in app.radio if r.label == "Workspace").value == "Results"
+
+
+def test_presets_edit_remove_and_guided_navigation(monkeypatch):
+    monkeypatch.setenv("BACKEND_URL", "http://test-backend")
+    sent = []
+
+    class Response:
+        ok = True
+
+        def json(self):
+            return {"id": f"cfg{len(sent)}", **sent[-1]}
+
+    def request(method, url, **kwargs):
+        assert method == "POST" and url.endswith("/api/configurations")
+        sent.append(kwargs["json"])
+        return Response()
+
+    with patch("requests.request", side_effect=request):
+        app = AppTest.from_file(APP)
+        app.session_state["document_set_id"] = "docs"
+        app.session_state["test_set_id"] = "questions"
+        app.run()
+        assert next(b for b in app.button if b.label == "Continue to evaluation").disabled
+        next(b for b in app.button if b.label == "Add MiniLM baseline").click().run()
+        next(b for b in app.button if b.label == "Add BGE + reranking").click().run()
+        assert not app.exception and len(app.session_state["configs"]) == 2
+        assert sent[0]["context_k"] == sent[0]["candidate_k"] == 3
+        assert sent[1]["candidate_k"] == 20 and sent[1]["rerank"]
+        assert not next(b for b in app.button if b.label == "Continue to evaluation").disabled
+        next(b for b in app.button if b.key == "edit_cfg1").click().run()
+        next(t for t in app.text_input if t.label == "Name").set_value("MiniLM tuned")
+        next(n for n in app.number_input if n.label == "Chunk tokens").set_value(96)
+        next(b for b in app.button if b.label == "Save changes").click().run()
+        assert not app.exception
+        assert len(app.session_state["configs"]) == 2
+        assert app.session_state["configs"][0]["name"] == "MiniLM tuned"
+        assert app.session_state["configs"][0]["chunk_size"] == 96
+        next(b for b in app.button if b.label == "Continue to evaluation").click().run()
+        assert next(r for r in app.radio if r.label == "Workspace").value == "Run"
+        assert not next(b for b in app.button if b.label == "Run evaluation").disabled
+        next(r for r in app.radio if r.label == "Workspace").set_value("Upload / Setup").run()
+        next(b for b in app.button if b.key == "remove_cfg2").click().run()
+        assert len(app.session_state["configs"]) == 1
+        assert next(b for b in app.button if b.label == "Continue to evaluation").disabled
+
+
+def test_invalid_configuration_and_blank_reference_rows_do_not_call_api(monkeypatch):
+    monkeypatch.setenv("BACKEND_URL", "http://test-backend")
+    with patch("requests.request") as request:
+        app = AppTest.from_file(APP).run()
+        next(b for b in app.button if b.label == "Save entered questions").click().run()
+        assert not app.exception
+        assert any("at least three characters" in e.value for e in app.error)
+        next(n for n in app.number_input if n.label == "Chunk tokens").set_value(32)
+        next(n for n in app.number_input if n.label == "Overlap").set_value(32)
+        next(b for b in app.button if b.label == "Add configuration").click().run()
+        assert not app.exception and any("Overlap must be smaller" in e.value for e in app.error)
+        request.assert_not_called()
+
+
+def test_history_search_filters_loaded_runs(monkeypatch):
+    monkeypatch.setenv("BACKEND_URL", "http://test-backend")
+    runs = [{"id": "one", "created_at": "2026-09-30T12:00:00Z", "status": "completed", "completed": 2,
+             "total": 2, "scored": 2, "configurations": [{"name": "MiniLM baseline"}]},
+            {"id": "two", "created_at": "2026-09-29T12:00:00Z", "status": "partial", "completed": 2,
+             "total": 2, "scored": 1, "configurations": [{"name": "BGE + reranking"}]}]
+
+    class Response:
+        ok = True
+
+        def json(self):
+            return {"runs": runs, "next_offset": None}
+
+    with patch("requests.request", return_value=Response()):
+        app = AppTest.from_file(APP)
+        app.session_state["page"] = "History"
+        app.run()
+        next(t for t in app.text_input if t.label == "Search this page").set_value("bge").run()
+        assert not app.exception and len(app.dataframe[0].value) == 1
+        assert app.selectbox[0].value == "two"
+        next(m for m in app.multiselect if m.label == "Status").set_value(["completed"]).run()
+        assert not app.exception and not app.dataframe
+        assert any("No runs match" in i.value for i in app.info)

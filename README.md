@@ -23,6 +23,8 @@ The previously successful local run is `6b74daea575e4a09842f4953c4b05f07`. Its r
 
 Configurations now separate **retrieval candidates** (`candidate_k`, 1–40) from **final passages** (`context_k`, 1–8). Reranking selects the final passages from the larger pool. The dashboard includes paginated **History**, **Retry missing work**, **Cancel run**, and separate processed/fully-scored progress counts. Generation and individual metric results are checkpointed to SQLite. The Dev Container installs both applications and starts both servers. These changes have automated coverage; a new live Groq benchmark and hosted deployment remain unverified.
 
+The dashboard now has a responsive card layout, numbered navigation and a three-step readiness checklist. MiniLM and BGE presets make setup quicker; selected configurations can be edited or removed before evaluation. Results separate the score overview from answer inspection, with readable score cards and expandable evidence passages. History supports configuration-name/run-ID search and status filters on the current page.
+
 ## Architecture
 
 ```text
@@ -59,17 +61,17 @@ Start two terminals from the repository root:
 .venv/Scripts/python.exe -m streamlit run dashboard/app.py --server.address 127.0.0.1
 ```
 
-Open [the dashboard](http://localhost:8501) and click **Try it now**. It uploads the fictional Harbor Community Lab handbook, stores ten reference questions, creates two configurations, and immediately starts a real evaluation. First use downloads all three open models to the Hugging Face cache (`~/.cache/huggingface`); allow several hundred MB of downloads and several GB for installed dependencies. CPU execution and Groq quota pacing can make a full run take many minutes.
+Open [the dashboard](http://localhost:8501) and click **Run sample benchmark**. It uploads the fictional Harbor Community Lab handbook, stores ten reference questions, creates two configurations, and immediately starts a real evaluation. First use downloads all three open models to the Hugging Face cache (`~/.cache/huggingface`); allow several hundred MB of downloads and several GB for installed dependencies. CPU execution and Groq quota pacing can make a full run take many minutes.
 
 Chroma persists vectors under `data/chroma`; metadata and result checkpoints persist in `data/bench.sqlite3`. Collection names include both run and configuration UUIDs. Model downloads are reused. Keep **one backend process/worker**; the executor serializes runs. A restart marks interrupted runs failed while preserving saved passages, answers and individual metric scores. Use **Retry missing work** to resume them.
 
 ## Add your data
 
-1. **Upload / Setup:** upload 1–10 PDFs, TXT or Markdown files (UTF-8). Limits: 5 MB/file, 100 pages/PDF and 150,000 extracted characters/set. Scanned PDFs need OCR outside this tool.
+1. **Setup:** upload 1–10 PDFs, TXT or Markdown files (UTF-8). Limits: 5 MB/file, 100 pages/PDF and 150,000 extracted characters/set. Scanned PDFs need OCR outside this tool.
 2. Upload a CSV with `question,reference` columns (`expected_answer` is an alias), upload a JSON array of those objects, or enter pairs in the editable table. Accepts 1–20 questions. `sample_data/questions.json` is a complete example.
-3. Add 2–4 configurations: chunk tokens, overlap, model, final passage count, candidate count and reranking. Change one parameter at a time for controlled experiments.
-4. Open **Run** and start evaluation. Progress polls automatically and distinguishes processed answers from fully scored answers. Reopen saved runs through **History**, or use a run ID. Cancel or retry missing work from **Run** or **Results**.
-5. Open **Results** for metric means, valid counts, bars/radar, reference answers and passages side by side. CSV exports contain one row per configuration/question, all scores, contexts, errors and latency.
+3. Add 2–4 configurations using the presets or the custom builder: chunk tokens, overlap, model, final passage count, candidate count and reranking. Edit or remove selected configurations as needed. Change one parameter at a time for controlled experiments.
+4. Click **Continue to evaluation** after the checklist is complete, then **Run evaluation**. Progress polls automatically and distinguishes processed answers from fully scored answers. Reopen saved runs through **History**, or use a run ID. Cancel or retry missing work from **Evaluation** or **Results**.
+5. Open **Results** for metric means, valid counts and bars/radar in **Score overview**. Use **Inspect answers** to compare reference answers, generated answers and supporting passages. CSV exports contain one row per configuration/question, all scores, contexts, errors and latency.
 
 The sample compares multiple changes at once to demonstrate the interface; its winner cannot establish which individual setting caused an improvement.
 
@@ -128,7 +130,9 @@ Startup validates `INFERENCE_BACKEND` (`sentence-transformers` or `onnx`), a non
 .venv/Scripts/python.exe -m scripts.run_demo
 ```
 
-The current automated suite has 33 passing tests covering ingestion validation, malformed/blank/encrypted files, auth, missing keys, settings, non-finite metric errors, partial averages, checkpointed retry/cancellation, restart recovery, history pagination, dashboard actions and CSV formula escaping. A real persistent Chroma test uses deterministic tiny vectors to verify selection from a larger candidate pool without downloading models. The separate retrieval check downloads both real embedding models, exercises ten questions per model, checks token windows, and runs a real cross-encoder. These checks do **not** replace the full Groq/Ragas demo. `run_demo` requires 20 complete rows, nonzero mean scores and a working CSV endpoint, and saves results locally under ignored `data/`.
+The current automated suite has 36 tests covering ingestion validation, malformed/blank/encrypted files, auth, missing keys, settings, non-finite metric errors, partial averages, checkpointed retry/cancellation, restart recovery, history pagination, dashboard actions and CSV formula escaping. Dashboard coverage includes preset creation, configuration editing/removal, guided navigation, validation and history filters. A real persistent Chroma test uses deterministic tiny vectors to verify selection from a larger candidate pool without downloading models. The separate retrieval check downloads both real embedding models, exercises ten questions per model, checks token windows, and runs a real cross-encoder. These checks do **not** replace the full Groq/Ragas demo. `run_demo` requires 20 complete rows, nonzero mean scores and a working CSV endpoint, and saves results locally under ignored `data/`.
+
+The redesigned dashboard was also checked in a local headless browser at desktop and 390px mobile widths. Uploads, presets, editing, navigation, history, charts and passage inspection were exercised without calling Groq. Clearly labeled UI fixtures were used only in an ignored, isolated preview store to check results rendering; they are not shipped as benchmark scores.
 
 To verify a demo already started through the dashboard, set `BACKEND_URL` to that backend and run `python -m scripts.run_demo RUN_ID`. It checks all 80 finite scores and saves JSON plus CSV.
 
@@ -188,7 +192,7 @@ API_TOKEN = "SAME-TOKEN-AS-BACKEND"
 ```
 
 4. Deploy. Streamlit installs `dashboard/requirements.txt`, keeping ML packages off the frontend.
-5. Click **Try it now**, wait for all 20 answers and 80 finite metric scores, inspect passages, and download CSV. Deployment is only end-to-end verified after this succeeds.
+5. Click **Run sample benchmark**, wait for all 20 answers and 80 finite metric scores, inspect passages, and download CSV. Deployment is only end-to-end verified after this succeeds.
 
 ## Limitations and operational notes
 
