@@ -51,7 +51,7 @@ def fake_dependencies(monkeypatch, store, run_id, event=None):
             calls[self.name] += 1
             saved = store.get("run", run_id)
             row = next(r for r in saved["rows"] if r["question"] == sample.user_input
-                       and r.get("stage") == "generated") if self.name == METRICS[0] else None
+                       and r.get("stage") == "scoring") if self.name == METRICS[0] else None
             if row:
                 assert row["answer"] == "Generated answer"
             if event and self.name == METRICS[0] and calls[self.name] == 1:
@@ -91,6 +91,11 @@ def test_cancel_checkpoint_and_resume_without_repeating_answers_or_scores(benchm
     assert finished["rows"][0]["contexts"] == preserved["contexts"]
     assert finished["retry_history"][0]["previous_row"] == preserved
     assert finished["completed"] == finished["scored"] == 4 and finished["valid_scores"] == 16
+    from backend.profiling_report import spans
+    entries = list(spans(finished["profiling"]))
+    assert len([e for e in entries if e["stage"] == "generation"]) == 4
+    assert len([e for e in entries if e["stage"] == "scoring"]) == 16
+    assert [a["status"] for a in finished["profiling"]["attempts"]] == ["cancelled", "completed"]
 
 
 def test_cancel_queued_run_makes_no_model_or_provider_calls(benchmark, monkeypatch):

@@ -5,12 +5,14 @@ import time
 import logging
 from copy import deepcopy
 from datetime import datetime, timezone
+from contextvars import copy_context
 import numpy as np
 import pandas as pd
 from backend.models import METRICS, MODELS
 from backend.retrieval import embed, load_embedder, retrieve_questions
 from backend.run_state import RunCancelled, missing_metrics, needs_work, progress
 from backend.settings import load_settings
+from backend.profiling import ProfiledClient, ProfiledAsyncClient, RunProfiler, measure
 
 log = logging.getLogger(__name__)
 
@@ -26,6 +28,7 @@ def make_llm():
     return ChatGroq(model=settings.model, temperature=0, max_tokens=2048,
                     reasoning_effort=settings.reasoning_effort,
                     max_retries=5, timeout=120,
+                    http_client=ProfiledClient(), http_async_client=ProfiledAsyncClient(),
                     rate_limiter=InMemoryRateLimiter(requests_per_second=1 / settings.request_interval,
                                                      check_every_n_seconds=0.1, max_bucket_size=1))
 
@@ -80,9 +83,11 @@ async def score_row(metrics, row, on_score=None, checkpoint=None):
         if checkpoint:
             checkpoint()
         try:
-            value = float(await metric.single_turn_ascore(sample, timeout=240))
-            if not math.isfinite(value):
-                raise ValueError("Ragas returned a non-finite score")
+            with measure("scoring", configuration_id=row.get("configuration_id"),
+                         question_index=row.get("question_index"), metric=name):
+                value = float(await metric.single_turn_ascore(sample, timeout=240))
+                if not math.isfinite(value):
+                    raise ValueError("Ragas returned a non-finite score")
             scores[name] = value
         except Exception as exc:
             scores[name] = None
@@ -126,7 +131,8 @@ def evaluate_row(llm, metrics, row, runner, save, checkpoint):
         checkpoint()
         if not row["answer"] or "generation" in row["errors"]:
             try:
-                row["answer"] = generate_answer(llm, row)
+                with measure("generation", configuration_id=row["configuration_id"], question_index=row["question_index"]):
+                    row["answer"] = generate_answer(llm, row)
             except Exception as exc:
                 row["errors"]["generation"] = type(exc).__name__ + ": generation failed; check API quota and credentials"
                 row.update(processed=True, stage="evaluated")
@@ -146,7 +152,7 @@ def evaluate_row(llm, metrics, row, runner, save, checkpoint):
             save()
 
         runner.run(score_row({m: metrics[m] for m in pending}, row,
-                             on_score=commit_score, checkpoint=checkpoint))
+                             on_score=commit_score, checkpoint=checkpoint), context=copy_context())
         row.update(processed=True, stage="evaluated")
     finally:
         row["latency_seconds"] = round(row.get("latency_seconds", 0) + time.monotonic() - started, 2)
@@ -157,12 +163,16 @@ def execute_run(store, run_id, cancel_event=None, retry=False):
     import asyncio
     run = store.get("run", run_id)
     runner = asyncio.Runner()
+    profiler = None
+    llm = None
 
     def checkpoint():
         if cancel_event is not None and cancel_event.is_set():
             raise RunCancelled()
 
-    def save():
+    def save(refresh_profile=True):
+        if profiler is not None and refresh_profile:
+            profiler.snapshot()
         run.update(progress(run))
         run["summary"] = summarize(run["rows"], run["configurations"], len(run["questions"]))
         store.save("run", run, run_id)
@@ -172,67 +182,78 @@ def execute_run(store, run_id, cancel_event=None, retry=False):
         run["stage"] = text
         save()
 
-    try:
-        checkpoint()
-        run.update(status="running", started_at=run.get("started_at", now()),
-                   stage="Resuming missing work" if retry else "Loading local models")
-        run.pop("error", None)
-        run.pop("finished_at", None)
-        save()
-        # A restart/cancellation can happen after the last score commit but before finalization.
-        if all(s["complete"] for s in run["summary"]) and all(not needs_work(r) for r in run["rows"]):
-            run.update(status="completed", stage="Finished from saved scores")
-            return run
-        llm = make_llm()
-        # Fail once on an inaccessible model before spending CPU time on retrieval.
-        llm.invoke("Reply with OK.")
-        configs, questions = run["configurations"], run["questions"]
-        for config in configs:
+    with RunProfiler(run, on_update=lambda: save(refresh_profile=False)) as profiler:
+        try:
             checkpoint()
-            by_index = {r["question_index"]: r for r in run["rows"] if r["configuration_id"] == config["id"]}
-            missing = [i for i in range(len(questions)) if i not in by_index]
-            if missing:
-                retrieved = retrieve_questions(store, run_id, config, questions, missing, checkpoint, stage)
-                for index, contexts in retrieved.items():
-                    row = {"configuration_id": config["id"], "configuration_name": config["name"],
-                           "question_index": index, **questions[index], "contexts": contexts,
-                           "answer": "", "scores": {m: None for m in METRICS}, "errors": {},
-                           "latency_seconds": 0, "processed": False, "stage": "retrieved"}
-                    run["rows"].append(row)
-                    by_index[index] = row
-                # Save passages before any generation or judge request.
-                save()
-            pending = [by_index[i] for i in range(len(questions)) if needs_work(by_index[i])]
-            if not pending:
-                continue
+            run.update(status="running", started_at=run.get("started_at", now()),
+                       stage="Resuming missing work" if retry else "Loading local models")
+            run.pop("error", None)
+            run.pop("finished_at", None)
+            save()
+            # A restart/cancellation can happen after the last score commit but before finalization.
+            if all(s["complete"] for s in run["summary"]) and all(not needs_work(r) for r in run["rows"]):
+                run.update(status="completed", stage="Finished from saved scores")
+                return run
+            llm = make_llm()
+            # Fail once on an inaccessible model before spending CPU time on retrieval.
+            with measure("provider_check"):
+                llm.invoke("Reply with OK.")
+            configs, questions = run["configurations"], run["questions"]
+            for config in configs:
+                checkpoint()
+                by_index = {r["question_index"]: r for r in run["rows"] if r["configuration_id"] == config["id"]}
+                missing = [i for i in range(len(questions)) if i not in by_index]
+                if missing:
+                    retrieved = retrieve_questions(store, run_id, config, questions, missing, checkpoint, stage)
+                    for index, contexts in retrieved.items():
+                        row = {"configuration_id": config["id"], "configuration_name": config["name"],
+                               "question_index": index, **questions[index], "contexts": contexts,
+                               "answer": "", "scores": {m: None for m in METRICS}, "errors": {},
+                               "latency_seconds": 0, "processed": False, "stage": "retrieved"}
+                        run["rows"].append(row)
+                        by_index[index] = row
+                    # Save passages before any generation or judge request.
+                    save()
+                pending = [by_index[i] for i in range(len(questions)) if needs_work(by_index[i])]
+                if not pending:
+                    continue
+                checkpoint()
+                stage(f"Loading judge embeddings for {config['name']}")
+                with measure("judge_model_load", configuration_id=config["id"], model=MODELS[0]):
+                    evaluation_model = load_embedder(MODELS[0])
+                try:
+                    with measure("judge_setup", configuration_id=config["id"]):
+                        metrics = make_metrics(llm, evaluation_model)
+                    for row in pending:
+                        checkpoint()
+                        if retry:
+                            run.setdefault("retry_history", []).append({"retried_at": now(),
+                                "attempt": run.get("attempt", 1), "previous_row": deepcopy(row)})
+                            save()
+                        stage(f"{config['name']} · question {row['question_index'] + 1}/{len(questions)} · generation and Ragas")
+                        evaluate_row(llm, metrics, row, runner, save, checkpoint)
+                    del metrics
+                finally:
+                    del evaluation_model
+                    gc.collect()
             checkpoint()
-            stage(f"Loading judge embeddings for {config['name']}")
-            evaluation_model = load_embedder(MODELS[0])
+            run["status"] = "completed" if all(s["complete"] for s in run["summary"]) and all(not needs_work(r) for r in run["rows"]) else "partial"
+            run["stage"] = "Finished" if run["status"] == "completed" else "Finished with errors; retry missing work when quota is available"
+        except RunCancelled:
+            run.update(status="cancelled", stage="Cancelled; saved work can be resumed")
+        except Exception as exc:
+            log.exception("Run failed: %s", type(exc).__name__)
+            run.update(status="failed", stage="Run failed; saved work can be resumed",
+                       error=type(exc).__name__ + ": pipeline failed; inspect server logs")
+        finally:
             try:
-                metrics = make_metrics(llm, evaluation_model)
-                for row in pending:
-                    checkpoint()
-                    if retry:
-                        run.setdefault("retry_history", []).append({"retried_at": now(),
-                            "attempt": run.get("attempt", 1), "previous_row": deepcopy(row)})
-                        save()
-                    stage(f"{config['name']} · question {row['question_index'] + 1}/{len(questions)} · generation and Ragas")
-                    evaluate_row(llm, metrics, row, runner, save, checkpoint)
-                del metrics
+                if isinstance(getattr(llm, "http_client", None), ProfiledClient):
+                    llm.http_client.close()
+                if isinstance(getattr(llm, "http_async_client", None), ProfiledAsyncClient):
+                    runner.run(llm.http_async_client.aclose(), context=copy_context())
             finally:
-                del evaluation_model
-                gc.collect()
-        checkpoint()
-        run["status"] = "completed" if all(s["complete"] for s in run["summary"]) and all(not needs_work(r) for r in run["rows"]) else "partial"
-        run["stage"] = "Finished" if run["status"] == "completed" else "Finished with errors; retry missing work when quota is available"
-    except RunCancelled:
-        run.update(status="cancelled", stage="Cancelled; saved work can be resumed")
-    except Exception as exc:
-        log.exception("Run failed: %s", type(exc).__name__)
-        run.update(status="failed", stage="Run failed; saved work can be resumed",
-                   error=type(exc).__name__ + ": pipeline failed; inspect server logs")
-    finally:
-        runner.close()
-        run["finished_at"] = now()
-        save()
+                runner.close()
+                run["finished_at"] = now()
+                profiler.status = run["status"]
+                save()
     return run

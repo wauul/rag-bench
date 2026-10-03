@@ -8,6 +8,8 @@ import plotly.graph_objects as go
 import requests
 import streamlit as st
 from dotenv import load_dotenv
+from dashboard.performance import performance_metrics, performance_panel
+from backend.profiling_report import row_profile
 from dashboard.ui import (MODEL_LABELS, STATUS_LABELS, apply_styles, config_description,
                           format_date, format_score, header, status_badge, step_status)
 
@@ -341,6 +343,10 @@ def poll_run():
             elif run["status"] in {"partial", "failed", "cancelled"}:
                 st.warning(run.get("error", "Some scores are unavailable. Inspect results or retry the missing work."))
             run_controls(run)
+            if run.get("profiling"):
+                with st.expander("Performance so far"):
+                    performance_metrics(run["profiling"])
+                    st.caption("Cumulative across recorded attempts. Open Results → Performance for phase details and exports.")
             with st.expander("Run details"):
                 st.caption(f"Created {format_date(run['created_at'])} · {len(run['configurations'])} configurations")
                 st.code(run["id"], language=None)
@@ -395,6 +401,12 @@ def answer_explorer(run):
                 st.write(row["answer"] or ("Generation pending" if run["status"] in {"queued", "running"} else "Generation unavailable"))
                 st.html('<div class="score-strip">' + ''.join(f'<div><small>{LABELS[m]}</small><strong>{format_score(row["scores"].get(m))}</strong></div>' for m in METRICS) + '</div>')
                 st.caption(f"Generation and scoring · {row['latency_seconds']:.1f}s")
+                measured = row_profile(run.get("profiling", {}), config_id, index)
+                if measured:
+                    timings = measured["timings"]
+                    generation, scoring = timings.get("generation"), timings.get("scoring")
+                    st.caption(f"Measured generation: {generation:.2f}s" if generation is not None else "Generation timing unavailable")
+                    st.caption(f"Measured scoring: {scoring:.2f}s" if scoring is not None else "Scoring timing unavailable")
                 if row["errors"]:
                     with st.expander("Scoring errors", expanded=True):
                         for metric, error in row["errors"].items():
@@ -424,6 +436,8 @@ def results():
     run_controls(run)
     if not run["rows"]:
         st.info(run.get("error", run["stage"]))
+        if run.get("profiling"):
+            performance_panel(run)
         return
     summaries = run["summary"]
     all_complete = run["status"] == "completed" and bool(summaries) and all(s["complete"] for s in summaries)
@@ -433,7 +447,7 @@ def results():
         st.success(f"Highest equal-weight mean: {', '.join(winners)} · {best:.3f}")
     else:
         st.warning("Results are incomplete. Averages exclude missing scores; no overall winner is declared.")
-    overview, answers = st.tabs(["Score overview", "Inspect answers"])
+    overview, answers, performance = st.tabs(["Score overview", "Inspect answers", "Performance"])
     with overview:
         for start in range(0, len(summaries), 2):
             columns = st.columns(2)
@@ -457,6 +471,8 @@ def results():
             st.json(run["configurations"])
     with answers:
         answer_explorer(run)
+    with performance:
+        performance_panel({"id": run_id, **run})
     st.divider()
     csv = api("GET", f"/api/runs/{run_id}/export").content
     st.download_button("Download full results CSV", csv, file_name=f"rag-bench-{run_id}.csv", mime="text/csv", icon=":material/download:")

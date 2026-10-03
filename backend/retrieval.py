@@ -3,6 +3,7 @@ import gc
 import os
 from functools import lru_cache
 from backend.models import Configuration, MODELS
+from backend.profiling import measure
 
 
 @lru_cache(maxsize=1)
@@ -77,29 +78,34 @@ def retrieve_questions(store, run_id, config_data, questions, indexes, checkpoin
     checkpoint()
     stage(f"Indexing {config.name}")
     documents = store.get("documents", store.get("run", run_id)["document_set_id"])["documents"]
-    chunks = chunk_documents(documents, config)
-    model = load_embedder(config.embedding_model)
+    labels = {"configuration_id": config_data["id"]}
+    with measure("chunking", **labels):
+        chunks = chunk_documents(documents, config)
+    with measure("embedding_model_load", model=config.embedding_model, **labels):
+        model = load_embedder(config.embedding_model)
     try:
         checkpoint()
-        client = chromadb.PersistentClient(path=str(store.root / "chroma"),
-                                          settings=Settings(anonymized_telemetry=False))
-        collection = client.get_or_create_collection(f"run-{run_id}-cfg-{config_data['id']}",
-                                                     metadata={"hnsw:space": "cosine"})
-        for start in range(0, len(chunks), 64):
-            checkpoint()
-            batch = chunks[start:start + 64]
-            collection.upsert(ids=[str(i) for i in range(start, start + len(batch))],
-                documents=[c["text"] for c in batch], embeddings=embed(model, [c["text"] for c in batch]),
-                metadatas=[{k: v for k, v in c.items() if k != "text"} for c in batch])
+        with measure("indexing", chunks=len(chunks), **labels):
+            client = chromadb.PersistentClient(path=str(store.root / "chroma"),
+                                              settings=Settings(anonymized_telemetry=False))
+            collection = client.get_or_create_collection(f"run-{run_id}-cfg-{config_data['id']}",
+                                                         metadata={"hnsw:space": "cosine"})
+            for start in range(0, len(chunks), 64):
+                checkpoint()
+                batch = chunks[start:start + 64]
+                collection.upsert(ids=[str(i) for i in range(start, start + len(batch))],
+                    documents=[c["text"] for c in batch], embeddings=embed(model, [c["text"] for c in batch]),
+                    metadatas=[{k: v for k, v in c.items() if k != "text"} for c in batch])
         retrieved = {}
         stage(f"Retrieving {config.name}")
         for index in indexes:
             checkpoint()
-            query = embed(model, [questions[index]["question"]], query=True, name=config.embedding_model)
-            result = collection.query(query_embeddings=query, n_results=min(config.candidate_k, len(chunks)))
-            retrieved[index] = [{**meta, "text": text, "distance": float(distance), "chunk_id": cid}
-                for meta, text, distance, cid in zip(result["metadatas"][0], result["documents"][0],
-                                                    result["distances"][0], result["ids"][0])]
+            with measure("retrieval", question_index=index, **labels):
+                query = embed(model, [questions[index]["question"]], query=True, name=config.embedding_model)
+                result = collection.query(query_embeddings=query, n_results=min(config.candidate_k, len(chunks)))
+                retrieved[index] = [{**meta, "text": text, "distance": float(distance), "chunk_id": cid}
+                    for meta, text, distance, cid in zip(result["metadatas"][0], result["documents"][0],
+                                                        result["distances"][0], result["ids"][0])]
     finally:
         del model
         gc.collect()
@@ -108,10 +114,15 @@ def retrieve_questions(store, run_id, config_data, questions, indexes, checkpoin
         if config.rerank:
             checkpoint()
             stage(f"Reranking {config.name}")
-            reranker = load_reranker()
+            with measure("reranker_load", model="cross-encoder/ms-marco-MiniLM-L-6-v2", **labels):
+                reranker = load_reranker()
         for index, contexts in retrieved.items():
             checkpoint()
-            retrieved[index] = select_contexts(contexts, config, questions[index]["question"], reranker)
+            if config.rerank:
+                with measure("reranking", question_index=index, **labels):
+                    retrieved[index] = select_contexts(contexts, config, questions[index]["question"], reranker)
+            else:
+                retrieved[index] = select_contexts(contexts, config, questions[index]["question"], reranker)
         return retrieved
     finally:
         del reranker

@@ -13,10 +13,11 @@ import pandas as pd
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from backend.ingestion import MAX_BYTES, MAX_TEXT, extract_document, parse_test_set
-from backend.models import Configuration, RunRequest, TestSet
+from backend.models import Configuration, RunRequest, TestSet, METRICS
 from backend.storage import Store
 from backend.run_state import ACTIVE_STATES, validate_retry
 from backend.settings import load_settings
+from backend.profiling_report import interrupt_profile, profile_csv_rows, row_profile
 
 store = Store()
 executor = ThreadPoolExecutor(max_workers=1)
@@ -32,6 +33,7 @@ async def lifespan(app):
     # A killed process cannot resume its in-memory worker. Keep partial rows, mark honestly.
     for run in store.list("run"):
         if run["status"] in {"queued", "running"}:
+            interrupt_profile(run)
             run.update(status="failed", stage="Server restarted; retry to resume saved work", error="Interrupted by server restart")
             store.save("run", run, run["id"])
     yield
@@ -235,9 +237,37 @@ def export(run_id: str):
     run = fetch("run", run_id)
     if not run["rows"]:
         raise HTTPException(409, "No result rows available yet")
-    rows = [{**{k: v for k, v in row.items() if k not in {"scores", "contexts", "errors"}},
-             **row["scores"], "contexts": json.dumps(row["contexts"], ensure_ascii=False),
-             "errors": json.dumps(row["errors"])} for row in run["rows"]]
+    rows = []
+    for row in run["rows"]:
+        measured = row_profile(run.get("profiling", {}), row.get("configuration_id"), row.get("question_index")) or {}
+        timings, usage = measured.get("timings", {}), measured.get("groq", {})
+        rows.append({**{k: v for k, v in row.items() if k not in {"scores", "contexts", "errors"}},
+            **row["scores"], "contexts": json.dumps(row["contexts"], ensure_ascii=False), "errors": json.dumps(row["errors"]),
+            "generation_seconds": timings.get("generation"), "scoring_seconds": timings.get("scoring"),
+            **{f"{metric}_seconds": measured.get("metrics", {}).get(metric, {}).get("timings", {}).get("scoring") for metric in METRICS},
+            "groq_http_requests": usage.get("http_requests"),
+            **{f"groq_{field}_tokens": usage.get(f"{field}_tokens") if usage.get(f"{field}_token_reports") else None
+               for field in ("prompt", "completion", "total")}})
     frame = pd.DataFrame(rows).map(spreadsheet_safe)
     return StreamingResponse(io.StringIO(frame.to_csv(index=False)), media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="rag-bench-{run["id"]}.csv"'})
+
+
+@app.get("/api/runs/{run_id}/profile", dependencies=auth)
+def get_profile(run_id: str):
+    run = fetch("run", run_id)
+    return {"run_id": run_id, "profiling": run.get("profiling")}
+
+
+@app.get("/api/runs/{run_id}/profile/export", dependencies=auth)
+def export_profile(run_id: str):
+    run = fetch("run", run_id)
+    rows = profile_csv_rows(run.get("profiling", {}))
+    if not rows:
+        raise HTTPException(409, "No profiling measurements available for this run")
+    names = {c["id"]: c["name"] for c in run["configurations"]}
+    for row in rows:
+        row.update(run_id=run_id, configuration_name=names.get(row.get("configuration_id")))
+    frame = pd.DataFrame(rows).map(spreadsheet_safe)
+    return StreamingResponse(io.StringIO(frame.to_csv(index=False)), media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="rag-bench-profile-{run_id}.csv"'})

@@ -3,6 +3,7 @@ import numpy as np
 from backend.models import Configuration
 from backend.storage import Store
 from backend.retrieval import retrieve_questions
+from backend.profiling import RunProfiler
 
 
 def test_reranking_selects_evidence_outside_original_top_k(tmp_path, monkeypatch):
@@ -30,7 +31,15 @@ def test_reranking_selects_evidence_outside_original_top_k(tmp_path, monkeypatch
     stages = []
     config = {"id": "cfg", **Configuration(name="Rerank", rerank=True, candidate_k=3, context_k=1).model_dump()}
     questions = [{"question": "Which passage?"}]
-    contexts = retrieve_questions(store, run["id"], config, questions, [0], lambda: None, stages.append)[0]
+    measured = {"rows": [], "attempt": 1}
+    with RunProfiler(measured) as profiler:
+        contexts = retrieve_questions(store, run["id"], config, questions, [0], lambda: None, stages.append)[0]
+        profiler.status = "completed"
+    entries = measured["profiling"]["attempts"][0]["spans"]
+    assert [e["stage"] for e in entries] == ["chunking", "embedding_model_load", "indexing", "retrieval", "reranker_load", "reranking"]
+    assert all(e["configuration_id"] == "cfg" and e["seconds"] >= 0 for e in entries)
+    assert next(e for e in entries if e["stage"] == "indexing")["chunks"] == 4
+    assert measured["profiling"]["summary"]["rss_peak_mb"] > 0
     assert len(contexts) == 1 and contexts[0]["text"] == "best evidence"
     assert contexts[0]["rerank_score"] == 10
     # The same run/config collection can be rebuilt after an indexing interruption.

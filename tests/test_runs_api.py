@@ -73,7 +73,8 @@ def test_history_cancel_retry_and_completed_results(api):
     assert client.post(f"/api/runs/{run_id}/retry").status_code == 409
     client.headers.clear()
     for method, path in (("GET", "/api/runs"), ("POST", f"/api/runs/{run_id}/cancel"),
-                         ("POST", f"/api/runs/{run_id}/retry")):
+                         ("POST", f"/api/runs/{run_id}/retry"), ("GET", f"/api/runs/{run_id}/profile"),
+                         ("GET", f"/api/runs/{run_id}/profile/export")):
         assert client.request(method, path).status_code == 401
     client.headers["Authorization"] = "Bearer test-only"
     assert client.post(f"/api/runs/{run_id}/cancel").status_code == 202
@@ -94,6 +95,31 @@ def test_history_cancel_retry_and_completed_results(api):
     history = client.get("/api/runs").json()["runs"]
     assert history[0]["id"] == run_id and history[0]["scored"] == 20
     assert not {"rows", "questions", "retry_history"}.intersection(history[0])
+    assert "profiling" not in history[0]
+    profile = client.get(f"/api/runs/{run_id}/profile").json()["profiling"]
+    assert [a["status"] for a in profile["attempts"]] == ["cancelled", "completed"]
+    assert profile["summary"]["timings"]["scoring"] > 0
+    phase_export = client.get(f"/api/runs/{run_id}/profile/export")
+    assert phase_export.status_code == 200 and "rss_peak_mb" in phase_export.text
+    assert "groq_total_tokens" in phase_export.text
+    csv = client.get(f"/api/runs/{run_id}/export").text
+    assert "generation_seconds" in csv and "faithfulness_seconds" in csv and "groq_http_requests" in csv
+
+
+def test_legacy_profile_is_explicitly_missing_and_crashed_spans_are_interrupted(api):
+    client, main, _, _ = api
+    legacy = main.store.save("run", {"status": "completed", "rows": [], "configurations": []})
+    assert client.get(f"/api/runs/{legacy['id']}/profile").json()["profiling"] is None
+    assert client.get(f"/api/runs/{legacy['id']}/profile/export").status_code == 409
+    interrupted = main.store.save("run", {"status": "running", "rows": [], "profiling": {"version": 1,
+        "attempts": [{"number": 1, "status": "running", "seconds": 3.5,
+                      "spans": [{"stage": "scoring", "status": "running", "seconds": 2.0}]}]}})
+    with TestClient(main.app) as restarted:
+        restarted.headers["Authorization"] = "Bearer test-only"
+        saved = restarted.get(f"/api/runs/{interrupted['id']}").json()
+    attempt = saved["profiling"]["attempts"][0]
+    assert saved["status"] == "failed" and attempt["status"] == attempt["spans"][0]["status"] == "interrupted"
+    assert attempt["seconds"] == 3.5 and attempt["spans"][0]["seconds"] == 2.0
 
 
 def test_retry_preserves_successes_and_rejects_changed_provenance(api, monkeypatch):

@@ -6,9 +6,14 @@ from streamlit.testing.v1 import AppTest
 APP = str(Path(__file__).resolve().parents[1] / "dashboard/app.py")
 
 
+def dashboard_test():
+    # Allow cold Plotly/Streamlit imports on busy Windows and CI hosts.
+    return AppTest.from_file(APP, default_timeout=15)
+
+
 def test_setup_and_navigation_without_backend(monkeypatch):
     monkeypatch.setenv("BACKEND_URL", "")
-    app = AppTest.from_file(APP).run()
+    app = dashboard_test().run()
     assert not app.exception
     assert "Backend connection pending" in app.warning[0].value
     app.button[0].click().run()
@@ -44,7 +49,7 @@ def test_results_table_chart_and_drilldown(monkeypatch):
             return run
 
     with patch("requests.request", return_value=Response()):
-        app = AppTest.from_file(APP)
+        app = dashboard_test()
         app.session_state["run_id"] = "fixture"
         app.session_state["page"] = "Results"
         app.run()
@@ -53,7 +58,7 @@ def test_results_table_chart_and_drilldown(monkeypatch):
         assert len(app.get("plotly_chart")) == 1
         assert len(app.dataframe) == 2
         assert any(t.value == "A test passage" for t in app.text)
-        assert [tab.label for tab in app.tabs] == ["Score overview", "Inspect answers"]
+        assert [tab.label for tab in app.tabs] == ["Score overview", "Inspect answers", "Performance"]
         next(r for r in app.radio if r.label == "Comparison view").set_value("Radar").run()
         assert not app.exception
         assert len(app.get("plotly_chart")) == 1
@@ -75,7 +80,7 @@ def test_candidate_controls_send_separate_limits(monkeypatch):
         return Response()
 
     with patch("requests.request", side_effect=request):
-        app = AppTest.from_file(APP).run()
+        app = dashboard_test().run()
         assert next(n for n in app.number_input if n.label == "Retrieval candidates").disabled
         app.checkbox[0].set_value(True).run()
         next(n for n in app.number_input if n.label == "Retrieval candidates").set_value(12)
@@ -123,7 +128,7 @@ def test_history_opens_results_and_supports_retry_cancel_and_progress(monkeypatc
         return Response(run)
 
     with patch("requests.request", side_effect=request):
-        app = AppTest.from_file(APP)
+        app = dashboard_test()
         app.session_state["page"] = "History"
         app.session_state["results_run_id"] = "previous selection"
         app.run()
@@ -166,7 +171,7 @@ def test_presets_edit_remove_and_guided_navigation(monkeypatch):
         return Response()
 
     with patch("requests.request", side_effect=request):
-        app = AppTest.from_file(APP)
+        app = dashboard_test()
         app.session_state["document_set_id"] = "docs"
         app.session_state["test_set_id"] = "questions"
         app.run()
@@ -197,7 +202,7 @@ def test_presets_edit_remove_and_guided_navigation(monkeypatch):
 def test_invalid_configuration_and_blank_reference_rows_do_not_call_api(monkeypatch):
     monkeypatch.setenv("BACKEND_URL", "http://test-backend")
     with patch("requests.request") as request:
-        app = AppTest.from_file(APP).run()
+        app = dashboard_test().run()
         next(b for b in app.button if b.label == "Save entered questions").click().run()
         assert not app.exception
         assert any("at least three characters" in e.value for e in app.error)
@@ -222,7 +227,7 @@ def test_history_search_filters_loaded_runs(monkeypatch):
             return {"runs": runs, "next_offset": None}
 
     with patch("requests.request", return_value=Response()):
-        app = AppTest.from_file(APP)
+        app = dashboard_test()
         app.session_state["page"] = "History"
         app.run()
         next(t for t in app.text_input if t.label == "Search this page").set_value("bge").run()
@@ -231,3 +236,53 @@ def test_history_search_filters_loaded_runs(monkeypatch):
         next(m for m in app.multiselect if m.label == "Status").set_value(["completed"]).run()
         assert not app.exception and not app.dataframe
         assert any("No runs match" in i.value for i in app.info)
+
+
+def test_performance_tab_shows_measured_fields_and_missing_legacy_data(monkeypatch):
+    from backend.profiling_report import empty_usage, summarize_profile
+    monkeypatch.setenv("BACKEND_URL", "http://test-backend")
+    metrics = ["faithfulness", "answer_relevancy", "context_precision", "context_recall"]
+    usage = {**empty_usage(), "http_requests": 2, "http_successes": 1, "http_failures": 1,
+             "rate_limit_responses": 1, "usage_reports": 1, "prompt_tokens": 10, "completion_tokens": 4,
+             "total_tokens": 14, "prompt_token_reports": 1, "completion_token_reports": 1, "total_token_reports": 1}
+    entries = [{"stage": stage, "configuration_id": "a", "question_index": 0 if stage != "indexing" else None,
+                "metric": "faithfulness" if stage == "scoring" else None, "seconds": seconds,
+                "status": "completed", "rss_peak_mb": 123, "groq": usage if stage == "scoring" else empty_usage()}
+               for stage, seconds in (("indexing", 2), ("generation", 3), ("scoring", 4))]
+    profile = {"version": 1, "coverage": "full", "attempts": [{"number": 1, "status": "completed",
+               "seconds": 9, "rss_peak_mb": 123, "spans": entries}]}
+    profile["summary"] = summarize_profile(profile)
+    run = {"id": "fixture", "status": "completed", "completed": 1, "total": 1, "created_at": "test fixture",
+        "configurations": [{"id": "a", "name": "UI fixture"}], "questions": [{"question": "Fixture?", "reference": "Fixture"}],
+        "rows": [{"configuration_id": "a", "question_index": 0, "answer": "Fixture", "errors": {}, "contexts": [],
+                  "latency_seconds": 7, "scores": dict.fromkeys(metrics, 0.5)}],
+        "summary": [{"configuration_id": "a", "name": "UI fixture", **dict.fromkeys(metrics, 0.5),
+                     "overall": 0.5, "complete": True, "expected_questions": 1, "valid_counts": dict.fromkeys(metrics, 1)}],
+        "provenance": {"source": "UI fixture"}, "profiling": profile}
+
+    class Response:
+        ok = True
+        content = b"question,answer\nFixture,Fixture\n"
+
+        def json(self):
+            return run
+
+    with patch("requests.request", return_value=Response()):
+        app = dashboard_test()
+        app.session_state["run_id"] = "fixture"
+        app.session_state["page"] = "Results"
+        app.run()
+        assert not app.exception
+        values = {m.label: m.value for m in app.metric}
+        assert values["Indexing time"] == "2.0s" and values["Scoring time"] == "4.0s"
+        assert values["Peak backend RAM"] == "123.0 MiB" and values["Groq HTTP requests"] == "2"
+        assert values["Reported total tokens"] == "14"
+        assert any("1 rate limits" in c.value for c in app.caption)
+        run["profiling"]["coverage"] = "since_enabled"
+        run["profiling"]["attempts"][0]["status"] = "interrupted"
+        app.run()
+        assert not app.exception and any("lower bounds" in w.value for w in app.warning)
+        assert any("before profiling was enabled" in w.value for w in app.warning)
+        run.pop("profiling")
+        app.run()
+        assert not app.exception and any("not recorded" in i.value for i in app.info)

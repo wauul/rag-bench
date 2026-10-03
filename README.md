@@ -25,6 +25,8 @@ Configurations now separate **retrieval candidates** (`candidate_k`, 1–40) fro
 
 The dashboard now has a responsive card layout, numbered navigation and a three-step readiness checklist. MiniLM and BGE presets make setup quicker; selected configurations can be edited or removed before evaluation. Results separate the score overview from answer inspection, with readable score cards and expandable evidence passages. History supports configuration-name/run-ID search and status filters on the current page.
 
+New runs also record a durable performance profile. **Results → Performance** compares indexing, generation and scoring time, sampled backend RAM, Groq HTTP attempts and reported tokens. Phase, metric and model-loading details can be downloaded as CSV/JSON. Profiling accumulates across retries without repeating measurements for saved answers or scores.
+
 ## Architecture
 
 ```text
@@ -115,11 +117,31 @@ Interactive docs: [localhost:8000/docs](http://localhost:8000/docs).
 | `POST /api/runs/{id}/cancel` | Request cancellation between operations, preserving results (202) |
 | `GET /api/runs/{id}` | Status, progress, configuration snapshots, provenance, summary, per-question results |
 | `GET /api/runs/{id}/export` | CSV, including partial rows if available |
+| `GET /api/runs/{id}/profile` | Saved performance profile and summary; `profiling: null` for runs without measurements |
+| `GET /api/runs/{id}/profile/export` | One CSV row per measured phase/attempt; returns 409 when no phases were recorded |
 | `GET /health` | Lightweight readiness and key-presence check; does not call Groq |
 
 Run states: `queued`, `running`, `completed`, `partial`, `failed`, `cancelled`. A busy worker or incompatible retry returns 409; a missing Groq key returns 503; invalid input returns 422. A cancellation request does not interrupt an in-flight model or judge call: its result is saved before the worker stops. Runs expose `retrieved`, `completed` (processed answers), `scored` (fully successful answers), `valid_scores`, and a live `cancel_requested` flag. The API never sends its Groq key to Streamlit. Set `API_TOKEN` to require a bearer token on all `/api` endpoints when publicly hosting. Give the dashboard the same token through secrets.
 
 Startup validates `INFERENCE_BACKEND` (`sentence-transformers` or `onnx`), a nonempty `GROQ_MODEL`, finite `GROQ_REQUEST_INTERVAL` of at least 0.1 seconds, and integer `JUDGE_EXAMPLES` in 0–3. Invalid settings name the offending variable before a worker starts.
+
+## Performance profiling
+
+Profiling is automatic for new evaluations. It records separate elapsed times for chunking, retriever loading, document embedding/vector-index writes, query retrieval, reranker loading/ranking, judge embedding loading/setup, answer generation and each Ragas metric attempt. Configuration/question/metric identifiers associate measurements with their work. Generation and metric timings include quota pacing, retries and checkpoint overhead; `http_seconds` isolates time inside the HTTP client. Worker time also includes setup, cleanup and work between phases. Metric tables show attempt counts, total, mean, median and 95th percentile latency, including failures and retries.
+
+Memory is the backend process's resident set size (RSS), measured in **MiB** every 100 ms and at phase boundaries. Each phase records RSS before/after, the change and sampled peak. Model-loading rows name the model and show its process-memory impact. These values include libraries, indexes, Python and allocator effects; they do not isolate model weights. Sampling can miss shorter peaks. Attempt metadata records OS, Python and CPU count so comparisons can account for host differences. First-use downloads can affect model-loading time; compare runs on the same hardware with the same cache conditions.
+
+Groq accounting wraps both synchronous and asynchronous HTTP clients, counting every SDK HTTP attempt, 429 response, other HTTP failure and transport error. Usage includes the readiness check, generation and individual judge completions. Prompt, completion, total, reasoning and cached-token counters use provider-reported values; reasoning/cached tokens are subsets, not additions to the total. A missing redundant total is computed only when both prompt and completion counts are reported. Successful responses without complete usage and requests without a saved outcome are disclosed separately. Unknown usage is never treated as a free request or a fabricated zero. This reports the run's consumption, not account-wide remaining quota or billing cost. No prompts, answer text, credentials or HTTP headers are copied into the profile.
+
+Profiles live in the run's SQLite record and checkpoint phase boundaries and HTTP attempts/outcomes. Retries append an attempt, retaining earlier measurements and costs. A process restart marks open phases/attempts **interrupted** and retains their last saved values as lower bounds; requests that never returned and peaks after the last checkpoint cannot be reconstructed. Historical runs without profiling show it as unavailable. Retrying an older run measures only new work and marks coverage as partial.
+
+The existing results CSV adds per-answer generation/scoring/per-metric seconds and known Groq requests/tokens. The separate performance CSV retains indexing, memory and all phase attempts; unreported token fields are blank. Download a saved profile without making new Groq calls:
+
+```powershell
+.venv/Scripts/python.exe -m scripts.profile_run RUN_ID
+```
+
+Set `BACKEND_URL` and `API_TOKEN` for the target backend. Reports are saved under ignored `data/profile-RUN_ID.json` and `.csv`.
 
 ## Verification
 
@@ -130,7 +152,7 @@ Startup validates `INFERENCE_BACKEND` (`sentence-transformers` or `onnx`), a non
 .venv/Scripts/python.exe -m scripts.run_demo
 ```
 
-The current automated suite has 36 tests covering ingestion validation, malformed/blank/encrypted files, auth, missing keys, settings, non-finite metric errors, partial averages, checkpointed retry/cancellation, restart recovery, history pagination, dashboard actions and CSV formula escaping. Dashboard coverage includes preset creation, configuration editing/removal, guided navigation, validation and history filters. A real persistent Chroma test uses deterministic tiny vectors to verify selection from a larger candidate pool without downloading models. The separate retrieval check downloads both real embedding models, exercises ten questions per model, checks token windows, and runs a real cross-encoder. These checks do **not** replace the full Groq/Ragas demo. `run_demo` requires 20 complete rows, nonzero mean scores and a working CSV endpoint, and saves results locally under ignored `data/`.
+The current automated suite has 44 tests covering ingestion validation, malformed/blank/encrypted files, auth, missing keys, settings, non-finite metric errors, partial averages, checkpointed retry/cancellation, restart recovery, history pagination, dashboard actions and CSV formula escaping. Dashboard coverage includes preset creation, configuration editing/removal, guided navigation, validation, history filters and performance rendering. Profiling tests use real Groq SDK calls against controlled HTTP transports to check retry counts, async judge completions, nested token metadata, missing/zero usage and row attribution; memory/clock fixtures test sampled peaks and cumulative attempts. A real persistent Chroma test uses deterministic tiny vectors to verify candidate selection and recorded retrieval/indexing/model-loading phases without downloading models. The separate retrieval check downloads both real embedding models, exercises ten questions per model, checks token windows, and runs a real cross-encoder. These checks do **not** replace the full Groq/Ragas demo. `run_demo` requires 20 complete rows, nonzero mean scores and a working CSV endpoint, and saves results locally under ignored `data/`.
 
 The redesigned dashboard was also checked in a local headless browser at desktop and 390px mobile widths. Uploads, presets, editing, navigation, history, charts and passage inspection were exercised without calling Groq. Clearly labeled UI fixtures were used only in an ignored, isolated preview store to check results rendering; they are not shipped as benchmark scores.
 
