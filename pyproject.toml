@@ -32,6 +32,7 @@ backend = [
   "pandas==2.3.2",
   "pypdf==6.19.0",
   "httpx==0.28.1",
+  "PyJWT[crypto]==2.15.1",
   "psutil==7.0.0",
   "langfuse>=4.7,<5",
 ]

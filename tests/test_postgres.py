@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 
 import psycopg
@@ -15,6 +16,86 @@ from psycopg.conninfo import conninfo_to_dict
 from backend.execution_lock import execution_lock
 from backend.postgres import validate_database_url
 from backend.storage import Store
+
+
+def test_managed_accounts_single_use_isolation_and_revocation(pg_url, tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from backend import accounts, main
+    from backend.identity import as_user
+
+    store = Store(tmp_path, database_url=pg_url)
+    monkeypatch.setattr(main, "store", store)
+    monkeypatch.setenv("API_TOKEN", "o" * 32)
+    monkeypatch.setenv("NEON_AUTH_URL", "https://test.neonauth.neon.tech/neondb/auth")
+    monkeypatch.setenv("AUTH_GATEWAY_URL", "https://testserver")
+    monkeypatch.setenv("DASHBOARD_URL", "https://ragbench.streamlit.app")
+    monkeypatch.setattr(accounts, "verified_subject", lambda token: "account-a")
+    with store.connect(operator=True) as db:
+        db.execute("CREATE SCHEMA neon_auth")
+        db.execute(
+            'CREATE TABLE neon_auth."user" (id TEXT PRIMARY KEY, "emailVerified" BOOLEAN, banned BOOLEAN)'
+        )
+        db.execute('INSERT INTO neon_auth."user" VALUES (%s,true,false)', ("account-a",))
+    with as_user("bob"):
+        private = store.save("run", {"status": "completed", "configurations": []})
+    client = TestClient(main.app, base_url="https://testserver")
+    verifier = "v" * 32
+    flow = client.post(
+        "/api/auth/start",
+        headers={"Authorization": "Bearer " + "o" * 32},
+        json={"challenge": accounts.digest(verifier)},
+    ).json()["flow"]
+    assert client.get("/auth/login", params={"flow": flow}).status_code == 200
+    finished = client.post(
+        "/auth/finish",
+        json={"flow": flow},
+        headers={"Origin": "https://testserver", "Authorization": "Bearer provider-proof"},
+    )
+    assert finished.status_code == 200
+    ticket = finished.json()["ticket"]
+    # Initiator-only polling cannot steal a victim's completed login.
+    assert client.post("/auth/redeem", json={"flow": flow, "verifier": verifier}).status_code == 422
+    assert (
+        client.post(
+            "/auth/redeem", json={"flow": flow, "verifier": verifier, "ticket": "x" * 32}
+        ).status_code
+        == 403
+    )
+    assert (
+        client.post(
+            "/auth/redeem", json={"flow": flow, "verifier": "x" * 32, "ticket": ticket}
+        ).status_code
+        == 403
+    )
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        replies = list(
+            executor.map(
+                lambda _: client.post(
+                    "/auth/redeem", json={"flow": flow, "verifier": verifier, "ticket": ticket}
+                ),
+                range(2),
+            )
+        )
+    assert sorted(r.status_code for r in replies) == [200, 400]
+    result = next(r.json() for r in replies if r.status_code == 200)
+    headers = {"Authorization": "Bearer " + result["token"]}
+    assert result["user_id"].startswith("acct_")
+    assert client.get("/api/runs/" + private["id"], headers=headers).status_code == 404
+    assert client.get("/api/runs?include_summary=true", headers=headers).json()["runs"] == []
+    key = client.post("/api/access-key", headers=headers).json()["key"]
+    assert client.get("/api/session", headers={"Authorization": "Bearer " + key}).status_code == 200
+    with store.connect(operator=True) as db:
+        db.execute('UPDATE neon_auth."user" SET banned=true')
+    for token in (key, result["token"]):
+        assert (
+            client.get("/api/session", headers={"Authorization": "Bearer " + token}).status_code
+            == 401
+        )
+    with store.connect(operator=True) as db:
+        db.execute('UPDATE neon_auth."user" SET banned=false')
+    assert client.post("/api/auth/logout", headers=headers).status_code == 200
+    assert client.get("/api/session", headers=headers).status_code == 401
 
 
 @pytest.fixture

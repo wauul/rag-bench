@@ -15,6 +15,7 @@ from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Upload
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from backend.accounts import install as install_account_routes
 from backend.debugger_api import install as install_debugger_routes
 from backend.ingestion import MAX_BYTES, MAX_TEXT, extract_bounded, extract_document, parse_test_set
 from backend.investigation_api import install as install_investigation_routes
@@ -185,6 +186,22 @@ class AdmissionMiddleware:
         self.app = app
 
     async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope["path"].startswith("/auth/"):
+            from backend.guardrails import throttle
+
+            try:
+                peer = (scope.get("client") or ("unknown",))[0]
+                if not await asyncio.to_thread(
+                    throttle, store, "auth-ip:" + peer, False
+                ) or not await asyncio.to_thread(throttle, store, "auth-workspace", False):
+                    return await JSONResponse(
+                        status_code=429, content={"detail": "Sign-in request limit exceeded"}
+                    )(scope, receive, send)
+            except Exception:
+                return await JSONResponse(
+                    status_code=503, content={"detail": "Sign-in protection unavailable"}
+                )(scope, receive, send)
+            return await self.app(scope, receive, send)
         if scope["type"] != "http" or not (
             scope["path"].startswith("/api/") or scope["path"] == "/ready"
         ):
@@ -204,7 +221,12 @@ class AdmissionMiddleware:
                 raise HTTPException(429, "User request limit exceeded")
             if not await asyncio.to_thread(throttle, store, "workspace", write):
                 raise HTTPException(429, "Workspace request limit exceeded")
-            if write and scope["method"] != "DELETE" and not scope["path"].endswith("/cancel"):
+            if (
+                write
+                and scope["method"] != "DELETE"
+                and not scope["path"].endswith("/cancel")
+                and not scope["path"].startswith("/api/auth/")
+            ):
                 await asyncio.to_thread(check, store)
         except HTTPException as exc:
             return await JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})(
@@ -219,6 +241,8 @@ class AdmissionMiddleware:
 
 
 app.add_middleware(AdmissionMiddleware)
+
+install_account_routes(app, lambda: store, auth)
 
 
 @app.get("/api/session", dependencies=auth)
