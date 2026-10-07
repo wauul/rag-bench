@@ -3,7 +3,12 @@
 import hmac
 import math
 import os
+import sys
 from html import escape
+from pathlib import Path
+
+# Community Cloud launches this file from dashboard/, not necessarily the repo root.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import pandas as pd
 import plotly.express as px

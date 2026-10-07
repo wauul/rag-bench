@@ -139,7 +139,7 @@ def health():
         "generation_ready": bool(os.getenv("GROQ_API_KEY")),
         "authentication_required": bool(os.getenv("API_TOKEN")),
         "storage": "postgres" if store.postgres else os.getenv("DATA_STORAGE", "unknown"),
-        "revision": os.getenv("APP_REVISION", os.getenv("RENDER_GIT_COMMIT", "local")),
+        "revision": os.getenv("RENDER_GIT_COMMIT") or os.getenv("APP_REVISION", "local"),
     }
 
 
