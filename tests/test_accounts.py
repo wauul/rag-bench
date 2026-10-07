@@ -61,6 +61,8 @@ def test_flow_requires_authenticated_start_and_private_verifier(account_client):
         ).status_code
         == 403
     )
+    assert "destination.origin===pinned.origin" in response.text
+    assert "destination.pathname===pinned.pathname+'/sign-in/social/init'" in response.text
     other = TestClient(client.app)
     assert other.get("/auth/login", params={"flow": flow}).status_code == 400
     with store.connect(operator=True) as db:
