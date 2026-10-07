@@ -1,0 +1,68 @@
+[
+  {
+    "package": "chromadb",
+    "id": "PYSEC-2026-311",
+    "aliases": [
+      "GHSA-f4j7-r4q5-qw2c",
+      "CVE-2026-45829"
+    ],
+    "owner": "wauul",
+    "expires": "2026-11-07",
+    "justification": "Only embedded PersistentClient is used. No Chroma HTTP server is exposed; collection embedding functions and remote code are never accepted from requests."
+  },
+  {
+    "package": "chromadb",
+    "id": "PYSEC-2026-3814",
+    "aliases": [
+      "CVE-2026-45833",
+      "GHSA-36p7-vc44-83pf"
+    ],
+    "owner": "wauul",
+    "expires": "2026-11-07",
+    "justification": "Only embedded PersistentClient is used. No Chroma HTTP server is exposed; collection embedding functions and remote code are never accepted from requests."
+  },
+  {
+    "package": "chromadb",
+    "id": "PYSEC-2026-3815",
+    "aliases": [
+      "GHSA-xph7-9rjv-w5fr",
+      "CVE-2026-45831"
+    ],
+    "owner": "wauul",
+    "expires": "2026-11-07",
+    "justification": "Only embedded PersistentClient is used. No Chroma HTTP server is exposed; collection embedding functions and remote code are never accepted from requests."
+  },
+  {
+    "package": "chromadb",
+    "id": "PYSEC-2026-3813",
+    "aliases": [
+      "GHSA-2wm9-hf6c-p5cr",
+      "CVE-2026-45830"
+    ],
+    "owner": "wauul",
+    "expires": "2026-11-07",
+    "justification": "Only embedded PersistentClient is used. No Chroma HTTP server is exposed; collection embedding functions and remote code are never accepted from requests."
+  },
+  {
+    "package": "diskcache",
+    "id": "PYSEC-2026-2447",
+    "aliases": [
+      "CVE-2025-69872",
+      "GHSA-w8v5-vhqr-4h9v"
+    ],
+    "owner": "wauul",
+    "expires": "2026-11-07",
+    "justification": "Ragas disk cache is disabled. Durable results use SQLite and JSON; cache storage is owned by UID 10001 and never receives uploaded cache files."
+  },
+  {
+    "package": "ragas",
+    "id": "PYSEC-2026-3046",
+    "aliases": [
+      "CVE-2026-6587",
+      "GHSA-95ww-475f-pr4f"
+    ],
+    "owner": "wauul",
+    "expires": "2026-11-07",
+    "justification": "Only text Faithfulness, ResponseRelevancy, ContextPrecision and ContextRecall are constructed. Multimodal URL/file-processing collection metrics are never reachable."
+  }
+]

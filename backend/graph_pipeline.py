@@ -21,6 +21,7 @@ from backend.graph_index import SharedIndex
 from backend.models import METRICS, MODELS, Configuration
 from backend.profiling import measure
 from backend.provenance import GRAPH_VERSION, digest, validate_snapshot
+from backend.retrieval_trace import load_trace, save_trace
 from backend.run_state import has_answer, missing_metrics, needs_work
 
 
@@ -215,17 +216,28 @@ def execute_configuration(
                     return
                 reranker = None
                 try:
-                    if config.rerank:
+                    trace = load_trace(store, run, config_data, question_index)
+                    if config.rerank and trace is None:
                         with measure(
                             "reranker_load", model="cross-encoder/ms-marco-MiniLM-L-6-v2", **labels
                         ):
                             reranker = retrieval.load_reranker()
                     with measure("reranking" if config.rerank else "passage_selection", **labels):
-                        selected = passage_selector(config, reranker).invoke(
-                            {
-                                "question": question["question"],
-                                "documents": to_documents(candidates["contexts"]),
-                            }
+                        selected = (
+                            to_documents(trace["selected"])
+                            if trace
+                            else passage_selector(
+                                config,
+                                reranker,
+                                lambda value: save_trace(
+                                    store, run, config_data, question_index, value
+                                ),
+                            ).invoke(
+                                {
+                                    "question": question["question"],
+                                    "documents": to_documents(candidates["contexts"]),
+                                }
+                            )
                         )
                     row = {
                         **labels,

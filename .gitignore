@@ -9,3 +9,5 @@ data/
 .streamlit/secrets.toml
 *.log
 .tools/
+.coverage
+reports/

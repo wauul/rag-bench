@@ -2,6 +2,7 @@
 
 import gc
 import os
+from copy import deepcopy
 from functools import lru_cache
 
 from backend.models import MODEL_REVISIONS, MODELS, Configuration
@@ -81,13 +82,26 @@ def load_reranker():
     return CrossEncoder(name, device="cpu", revision=MODEL_REVISIONS[name])
 
 
-def select_contexts(contexts, config, question, reranker=None):
+def select_contexts(contexts, config, question, reranker=None, on_trace=None):
+    original = deepcopy(contexts) if on_trace else None
     if config.rerank:
         values = reranker.predict([(question, c["text"]) for c in contexts], batch_size=8)
         for context, value in zip(contexts, values):
             context["rerank_score"] = float(value)
         contexts.sort(key=lambda c: c["rerank_score"], reverse=True)
-    return contexts[: config.context_k]
+    selected = contexts[: config.context_k]
+    if on_trace:
+        on_trace(
+            {
+                "candidates": original,
+                "ordered_candidates": deepcopy(contexts),
+                "selected": deepcopy(selected),
+                "rerank_applied": config.rerank,
+                "candidate_k": config.candidate_k,
+                "context_k": config.context_k,
+            }
+        )
+    return selected
 
 
 def retrieve_questions(store, run_id, config_data, questions, indexes, checkpoint, stage):
@@ -100,7 +114,8 @@ def retrieve_questions(store, run_id, config_data, questions, indexes, checkpoin
     stage(f"Indexing {config.name}")
     from backend.provenance import run_documents
 
-    documents = run_documents(store, store.get("run", run_id))
+    run = store.get("run", run_id)
+    documents = run_documents(store, run)
     labels = {"configuration_id": config_data["id"]}
     with measure("chunking", **labels):
         chunks = chunk_documents(documents, config)
@@ -156,14 +171,19 @@ def retrieve_questions(store, run_id, config_data, questions, indexes, checkpoin
                 reranker = load_reranker()
         for index, contexts in retrieved.items():
             checkpoint()
+            from backend.retrieval_trace import save_trace
+
+            def record_trace(selection, index=index):
+                save_trace(store, run, config_data, index, selection, questions[index]["question"])
+
             if config.rerank:
                 with measure("reranking", question_index=index, **labels):
                     retrieved[index] = select_contexts(
-                        contexts, config, questions[index]["question"], reranker
+                        contexts, config, questions[index]["question"], reranker, record_trace
                     )
             else:
                 retrieved[index] = select_contexts(
-                    contexts, config, questions[index]["question"], reranker
+                    contexts, config, questions[index]["question"], reranker, record_trace
                 )
         return retrieved
     finally:

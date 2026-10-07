@@ -264,3 +264,11 @@ API_TOKEN = "SAME-TOKEN-AS-BACKEND"
 - Public dashboard visitors share the backend's free quota. Use Streamlit access restrictions for private use. Uploaded text, questions, references and generated answers are sent to Groq for generation/evaluation; use appropriate non-sensitive benchmark data.
 - Stored data persists locally until removed; long-lived instances need manual retention/cleanup when idle. Free ephemeral hosting is unsuitable for durable records. Export results promptly.
 - PDF text extraction does not provide OCR or sophisticated table reconstruction. Chunking is token-window-based, not semantic segmentation.
+## Failure Investigator
+
+From **Results → Inspect answers**, open **Failure Investigator** to investigate
+a saved answer, inspect cited hypotheses and limitations, export JSON/Markdown,
+or create an editable configuration draft for a conditional experiment. Reports
+and additional model usage are stored separately from benchmark results. The
+feature uses LangChain structured Groq output and a durable, cancellable LangGraph
+workflow. See [scope, schema, usage limits and recovery](docs/failure-investigator.md).

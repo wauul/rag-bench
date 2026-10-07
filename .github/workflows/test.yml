@@ -1,23 +1,136 @@
-name: Tests
-on: [push, pull_request]
+name: Engineering
+on:
+  push:
+    branches: ["main", "codex/**"]
+  pull_request:
+  workflow_call:
 permissions:
   contents: read
+concurrency:
+  group: engineering-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  RAGAS_DO_NOT_TRACK: "true"
+  HF_HUB_DISABLE_TELEMETRY: "1"
+  RAGBENCH_LANGSMITH: "false"
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+  quality:
+    name: Quality (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: '3.11'
-      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
         with:
-          version: '0.12.19'
-      - run: uv sync --locked --extra backend --extra compact --extra dashboard
-      - run: uv pip check
+          version: "0.12.19"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --locked --extra backend --extra cpu --extra compact --extra dashboard --extra models
       - run: uv run --no-sync python -m scripts.export_requirements --check
-      - run: uv run --no-sync python -m pytest -q
+      - run: uv run --no-sync python -m scripts.checks
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: tests-${{ matrix.os }}
+          path: |
+            reports/tests.xml
+            reports/coverage.xml
+            reports/coverage.json
+          if-no-files-found: error
+  security:
+    name: Security
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: "0.12.19"
+      - run: uv sync --locked --extra backend --extra cpu --extra compact --extra dashboard --extra models
+      - run: uv run --no-sync python -m scripts.install_tools
+      - run: .tools/bin/actionlint
+      - run: .tools/bin/gitleaks git --redact=100 --no-banner
+      - run: python -c "from pathlib import Path; Path('reports').mkdir(exist_ok=True)"
+      - run: uv run --no-sync python -m bandit -r backend scripts -ll -f json -o reports/bandit.json
+      - run: uv run --no-sync python -m scripts.security
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: security-reports
+          path: |
+            reports/bandit.json
+            reports/dependencies.json
+  containers:
+    name: Containers (${{ matrix.variant }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: cpu
+            dockerfile: Dockerfile
+          - variant: compact
+            dockerfile: Dockerfile.render
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          load: true
+          tags: ragbench-api:test
+          build-args: APP_REVISION=${{ github.sha }}
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: Dockerfile.dashboard
+          load: true
+          tags: ragbench-dashboard:test
+          build-args: APP_REVISION=${{ github.sha }}
+      - run: python -m scripts.install_tools
+      - name: Validate Compose and actual artifacts
         env:
-          RAGAS_DO_NOT_TRACK: 'true'
-          RAGBENCH_LANGSMITH: 'false'
+          API_TOKEN: ci-test-only-token-with-at-least-32-characters
+        run: |
+          docker compose --env-file /dev/null config --quiet
+          python -m scripts.container_smoke --api ragbench-api:test --dashboard ragbench-dashboard:test
+      - name: Scan tested images
+        run: |
+          mkdir -p reports
+          .tools/bin/trivy image --scanners vuln --format json --output reports/api-container.json ragbench-api:test
+          .tools/bin/trivy image --scanners vuln --format json --output reports/dashboard-container.json ragbench-dashboard:test
+          python -m scripts.security --container reports/api-container.json
+          python -m scripts.security --container reports/dashboard-container.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: containers-${{ matrix.variant }}
+          path: reports/*container.json
+  gate:
+    name: Engineering gate
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [quality, security, containers]
+    steps:
+      - name: Require every dependency to succeed
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python -c 'import json,os; r=json.loads(os.environ["RESULTS"]); assert all(v["result"] == "success" for v in r.values()), r'

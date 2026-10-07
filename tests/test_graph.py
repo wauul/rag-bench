@@ -31,6 +31,15 @@ def test_engines_retrieval_prompt_parity_and_provenance(tmp_path, monkeypatch):
     a, b = result["rows"]
     assert a["contexts"] == b["contexts"]
     assert a["contexts"][0]["text"] == "Best evidence"
+    from backend.retrieval_trace import load_trace, trace_summary
+
+    for config, row in zip(result["configurations"], result["rows"]):
+        trace = load_trace(store, result, config, 0, row["contexts"])
+        assert trace["rerank_applied"]
+        assert trace["candidates"][0]["text"] != "Best evidence"
+        assert trace["ordered_candidates"][0]["text"] == "Best evidence"
+        assert all("rerank_score" not in c for c in trace["candidates"])
+        assert sum(p["supplied_to_answer"] for p in trace_summary(trace)["passages"]) == 1
     assert prompts[0] == prompts[1]
     assert calls == {"generation": 2, "rerank": 2, **dict.fromkeys(METRICS, 2)}
     assert result["answered"] == result["scored"] == 2

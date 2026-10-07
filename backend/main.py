@@ -4,6 +4,7 @@ import io
 import json
 import os
 import shutil
+import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
@@ -16,6 +17,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from backend.ingestion import MAX_BYTES, MAX_TEXT, extract_document, parse_test_set
+from backend.investigation_api import install as install_investigation_routes
 from backend.models import METRICS, Configuration, RunRequest, TestSet
 from backend.profiling_report import interrupt_profile, profile_csv_rows, row_profile
 from backend.run_state import ACTIVE_STATES, validate_retry
@@ -42,6 +44,12 @@ async def lifespan(app):
     with execution_lock(store, "server.lock"):
         try:
             with execution_lock(store):
+                for investigation in store.list("investigation"):
+                    if investigation["status"] in {"queued", "running"}:
+                        investigation.update(
+                            status="failed", error="Server restarted; resume saved stages"
+                        )
+                        store.save("investigation", investigation, investigation["id"])
                 for run in store.list("run"):
                     if run["status"] in {"queued", "running"}:
                         interrupt_profile(run)
@@ -301,6 +309,9 @@ def require_generation():
         raise HTTPException(503, str(exc))
 
 
+install_investigation_routes(sys.modules[__name__])
+
+
 @app.post("/api/runs", dependencies=auth, status_code=202)
 def start_run(body: RunRequest):
     settings = require_generation()
@@ -433,6 +444,11 @@ def delete_run(run_id: str):
             run = fetch("run", run_id)
             if run["status"] in ACTIVE_STATES:
                 raise HTTPException(409, "Cancel the run before deleting it")
+            if any(
+                i["run_id"] == run_id and i["status"] in ACTIVE_STATES
+                for i in store.list("investigation")
+            ):
+                raise HTTPException(409, "Cancel the investigation before deleting this run")
             store.delete_run(run_id)
     except ExecutionBusy as exc:
         raise HTTPException(409, str(exc))

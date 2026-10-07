@@ -18,6 +18,7 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from backend.profiling_report import row_profile
+from dashboard.investigation import investigation_panel
 from dashboard.performance import performance_metrics, performance_panel
 from dashboard.ui import (
     MODEL_LABELS,
@@ -249,7 +250,7 @@ def submit_configuration(key, editing_id):
             "rerank",
         ]
     }
-    if not values["rerank"]:
+    if not values["rerank"] and not st.session_state.get("config_draft"):
         values["candidate_k"] = values["context_k"]
     try:
         save_configuration(values, editing_id)
@@ -306,7 +307,7 @@ def configuration_builder():
     key = f"draft_{revision}"
     with st.expander(
         "Edit configuration" if editing else "Customize a configuration",
-        expanded=bool(editing) or not st.session_state.configs,
+        expanded=bool(draft) or not st.session_state.configs,
     ):
         rerank = st.checkbox(
             "Cross-encoder reranking",
@@ -369,8 +370,8 @@ def configuration_builder():
                 40,
                 draft.get("candidate_k", 20 if not draft else context_default),
                 key=key + "_candidate_k",
-                disabled=not rerank,
-                help="The reranker chooses final passages from this pool.",
+                disabled=not rerank and not draft,
+                help="The reranker chooses final passages from this pool. Without reranking, the leading final passages are used; a larger pool alone does not expand the supplied context.",
             )
             st.form_submit_button(
                 "Save changes" if editing else "Add configuration",
@@ -769,6 +770,14 @@ def answer_explorer(run):
                     + "</div>"
                 )
                 st.caption(f"Generation and scoring · {row['latency_seconds']:.1f}s")
+                if row.get("answer") or row.get("contexts"):
+                    investigation_panel(
+                        api,
+                        run.get("id", st.session_state.get("run_id")),
+                        row,
+                        edit_configuration,
+                        navigate,
+                    )
                 with st.expander("Execution details"):
                     st.json(
                         {
@@ -864,7 +873,7 @@ def results():
             chart_kind = st.radio(
                 "Comparison view", ["Bars", "Radar"], horizontal=True, label_visibility="collapsed"
             )
-            frame = pd.DataFrame(summaries).set_index("name")[METRICS]
+            frame = pd.DataFrame(summaries, columns=["name", *METRICS]).set_index("name")
             st.plotly_chart(comparison_chart(frame, chart_kind), width="stretch")
             st.caption(
                 "Higher is generally better. Judge scores are estimates; review the underlying evidence before choosing a configuration."

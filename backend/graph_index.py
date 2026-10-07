@@ -9,8 +9,9 @@ from backend.provenance import run_documents
 
 
 class SharedIndex:
-    def __init__(self, store, run, config, checkpoint):
+    def __init__(self, store, run, config, checkpoint, documents=None):
         self.store, self.run, self.data = store, run, config
+        self.documents = documents
         self.config, self.checkpoint = Configuration(**config), checkpoint
         self.model = self.collection = None
         self.labels = {"configuration_id": config["id"]}
@@ -38,7 +39,12 @@ class SharedIndex:
         if metadata.get("fingerprint") and metadata["fingerprint"] != fingerprint:
             raise ValueError("Index fingerprint mismatch")
         with measure("chunking", **self.labels):
-            chunks = retrieval.chunk_documents(run_documents(self.store, self.run), self.config)
+            chunks = retrieval.chunk_documents(
+                self.documents
+                if self.documents is not None
+                else run_documents(self.store, self.run),
+                self.config,
+            )
         self.load_model()
         with measure("indexing", **self.labels, chunks=len(chunks), cache="cold_or_incomplete"):
             for start in range(0, len(chunks), 64):

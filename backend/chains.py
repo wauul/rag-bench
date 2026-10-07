@@ -36,11 +36,15 @@ class ChromaRetriever(BaseRetriever):
         return to_documents(self.index.retrieve(query))
 
 
-def passage_selector(config, reranker=None):
+def passage_selector(config, reranker=None, on_trace=None):
     return RunnableLambda(
         lambda value: to_documents(
             select_contexts(
-                deepcopy(to_chunks(value["documents"])), config, value["question"], reranker
+                deepcopy(to_chunks(value["documents"])),
+                config,
+                value["question"],
+                reranker,
+                on_trace,
             )
         )
     )

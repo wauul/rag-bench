@@ -16,7 +16,8 @@ def main():
             "uvicorn",
             "backend.main:app",
             "--host",
-            "0.0.0.0",
+            # Container ingress requires this; API routes enforce bearer authentication.
+            "0.0.0.0",  # nosec B104
             "--port",
             str(port),
             "--workers",

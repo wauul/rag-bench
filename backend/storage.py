@@ -90,6 +90,19 @@ class Store:
             raise KeyError(object_id)
         return row[0] if self.postgres else json.loads(row[0])
 
+    def fail_queued_investigation(self, object_id):
+        """Atomic admission failure; never overwrite a worker that has begun running."""
+        patch = json.dumps({"status": "failed", "error": "Worker busy; resume saved stages"})
+        with self.connect() as db:
+            db.execute(
+                "UPDATE objects SET payload=payload || %s::jsonb "
+                "WHERE id=%s AND kind='investigation' AND payload->>'status'='queued'"
+                if self.postgres
+                else "UPDATE objects SET payload=json_patch(payload, ?) "
+                "WHERE id=? AND kind='investigation' AND json_extract(payload, '$.status')='queued'",
+                (patch, object_id),
+            )
+
     def list(self, kind, limit=None, offset=0):
         with self.connect() as db:
             rows = db.execute(
@@ -113,9 +126,10 @@ class Store:
                 "configurations",
             )
             projection = ", ".join(f"'{field}', payload->'{field}'" for field in fields)
+            # Projection uses only the literal field allowlist above; values remain bound.
             with self.connect() as db:
                 rows = db.execute(
-                    "SELECT jsonb_build_object('id', id, " + projection + ") FROM objects "
+                    "SELECT jsonb_build_object('id', id, " + projection + ") FROM objects "  # nosec B608
                     "WHERE kind='run' ORDER BY payload->>'created_at' DESC, id DESC LIMIT %s OFFSET %s",
                     (limit, offset),
                 ).fetchall()
@@ -149,6 +163,9 @@ class Store:
             from backend.graph_pipeline import checkpointer, thread_id
 
             with checkpointer(self) as saver:
+                for investigation in self.list("investigation"):
+                    if investigation["run_id"] == run_id:
+                        saver.delete_thread("investigation-" + investigation["id"])
                 for config in run["configurations"]:
                     for index in range(len(run["questions"])):
                         saver.delete_thread(thread_id(run_id, config["id"], index))
@@ -166,10 +183,10 @@ class Store:
                     client.delete_collection(name)
         with self.connect() as db:
             db.execute(
-                "DELETE FROM objects WHERE kind IN ('snapshot', 'graph_artifact', 'cancellation') "
+                "DELETE FROM objects WHERE kind IN ('snapshot', 'graph_artifact', 'retrieval_trace', 'cancellation', 'investigation', 'investigation_cancel') "
                 "AND payload->>'run_id'=%s"
                 if self.postgres
-                else "DELETE FROM objects WHERE kind IN ('snapshot', 'graph_artifact', 'cancellation') AND json_extract(payload, '$.run_id')=?",
+                else "DELETE FROM objects WHERE kind IN ('snapshot', 'graph_artifact', 'retrieval_trace', 'cancellation', 'investigation', 'investigation_cancel') AND json_extract(payload, '$.run_id')=?",
                 (run_id,),
             )
             db.execute(
