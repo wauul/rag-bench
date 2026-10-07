@@ -1,4 +1,4 @@
-# Delivery verification — 2026-10-07
+# Delivery verification â€” 2026-10-07
 
 ## Audit and changes
 
@@ -10,7 +10,7 @@ Missing boundaries addressed: PostgreSQL was a separate workflow outside the agg
 
 | Check | Observed result |
 | --- | --- |
-| Windows Python 3.11 engineering | 170 passed, 14 opt-in skips, 72.33% coverage; unchanged coverage gate passed. Lock/exports/dependency compatibility/Ruff/scoped mypy passed. |
+| Windows Python 3.11 engineering | 171 passed, 14 opt-in skips, 72.83% coverage; unchanged coverage gate passed. Lock/exports/dependency compatibility/Ruff/scoped mypy passed. |
 | PostgreSQL 17 recovery | 13 passed, including locks, replacement processes, all four workflows, real dumps/restores, interrupted checkpoints, explicit resume, checksum/nonempty rejection. Synthetic disposable databases only. |
 | Tracing/prompts/quality | 22 passed; actual SDK OTLP payload masking, disabled/debugger opt-ins, transport failure isolation, correlation, score IDs, missing usage, frozen remote label and fail-closed quality evidence. |
 | Native experiment SDK | 1 passed with actual installed SDK + controlled HTTP transport; fingerprint-only payload and original benchmark trace association. No external ingestion. |
@@ -24,13 +24,13 @@ Missing boundaries addressed: PostgreSQL was a separate workflow outside the agg
 
 The first Windows real-model invocation failed because the local environment lacked the CPU/model extras. A locked sync installed the missing extras and the rerun passed. The first simultaneous Trivy invocation hit its shared-cache lock; scans were rerun sequentially. These were resolved, not suppressed. Ragas emits existing embedding-wrapper deprecation warnings; semantics/fixed judge embeddings were preserved.
 
-Artifacts above were local images labeled `local-delivery-final`, not published GHCR releases. A final script formatting change requires a cached image refresh before exact-tree certification. Runtime tests added pytest only in disposable test containers; application runtime dependencies came from the built images. Raw machine evidence remains under ignored `reports/` and contains no production dump. Historical reports certify only their stated revisions.
+Artifacts were refreshed with source revision `5cfd5d0b6634dcdb5eba739e94e5c5bf8b556cc4`; actual startup/connectivity/restart checks and sequential scans passed on all refreshed images. SPDX SBOMs were generated for all three images. They are local images, not published GHCR releases. Runtime tests added pytest only in disposable test containers; application runtime dependencies came from the built images. Raw machine evidence remains under ignored `reports/` and contains no production dump. Historical reports certify only their stated revisions.
 
 ## Remote verification and activation boundaries
 
-GitHub repository admin access and owner `wauul` were verified. Main protection and reviewer-controlled release/evaluation/production environments were configured. Private vulnerability reporting was verified enabled. Remote Actions for the changed branch must be recorded separately; earlier successful main Actions do not certify these changes.
+GitHub repository admin access and owner `wauul` were verified. Main protection and reviewer-controlled release/evaluation/production environments were configured. Private vulnerability reporting was verified enabled. Remote PostgreSQL recovery and real CPU/ONNX integration passed for `5cfd5d0b6634dcdb5eba739e94e5c5bf8b556cc4`: [PostgreSQL](https://github.com/wauul/rag-bench/actions/runs/37658092526), [models](https://github.com/wauul/rag-bench/actions/runs/37658091347). [Engineering](https://github.com/wauul/rag-bench/actions/runs/37658093210) passed Windows and Linux quality, security, both containers, PostgreSQL and the aggregate Engineering gate. Earlier main Actions do not certify these changes. Draft review is [PR 9](https://github.com/wauul/rag-bench/pull/9).
 
-Render was visibly Free/source-backed (`Dockerfile.render`), auto-deploy Off, with the baseline commit live. The Streamlit dashboard rendered existing workspace controls against the hosted API; this proves the prior app connection, not a new deployment. No production record was changed and no paid resource/storage replacement was provisioned.
+Render was visibly Free/source-backed (`Dockerfile.render`), auto-deploy Off, with the baseline commit live. The Streamlit dashboard rendered existing workspace controls against the hosted API; this proves the prior app connection, not a new deployment. Authenticated Streamlit management confirmed main/dashboard/app.py on Python 3.11. The protected dashboard release branch was prepared at the existing deployed commit. Its adoption requires an approved delete/redeploy under the same hosting/subdomain, per current official documentation. No production record was changed and no paid resource/storage replacement was provisioned.
 
 Langfuse project identity, EU region, Hobby plan, authenticated browser access and **no API keys** were observed. The owner confirmed this project for metadata-only tracing. Production tracing, actual trace/score/experiment ingestion and configured retention/access remain unverified until a scoped backend credential is provisioned and tested.
 

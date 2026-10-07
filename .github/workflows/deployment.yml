@@ -52,7 +52,7 @@ jobs:
         run: |
           python -c 'import json; r=json.load(open("release/release.json")); print("\n".join(r["images"].values()))' > images.txt
           while IFS= read -r image; do
-            gh attestation verify "oci://$image" --repo wauul/rag-bench --signer-workflow wauul/rag-bench/.github/workflows/release.yml
+            gh attestation verify "oci://$image" --repo wauul/rag-bench --signer-workflow wauul/rag-bench/.github/workflows/release.yml --signer-digest "$REVISION" --source-digest "$REVISION"
           done < images.txt
           IMAGE=$(python -c 'import json; print(json.load(open("release/release.json"))["images"]["compact"])')
           uv run --no-sync python -m scripts.quality_gate "evaluations/promotions/$REVISION.json" evaluations/promotion-policy.json --revision "$REVISION" --image "$IMAGE"

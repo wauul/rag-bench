@@ -41,7 +41,16 @@ There is a provider-response-before-durable-save uncertainty window. A crash can
 
 ## Retention and monitoring
 
-Local benchmark/investigation/optimization/debugger records have no automatic TTL: they remain until an operator uses supported application deletion or an approved offline retention procedure. Deleting a document does not erase immutable copies in runs. Backups also contain sensitive evidence; restrict access, encrypt at rest in operator storage and apply an explicit retention schedule (recommended starting policy: 7 daily/4 weekly backups after a restore drill). This recommendation is not configured automation. Do not delete dependency records of active work or claim local deletion propagates to Langfuse.
+| Evidence | Current deletion behavior |
+| --- | --- |
+| Independent benchmarks | Authenticated DELETE /api/runs/{id}, only after active work stops; removes associated snapshots, retrieval artifacts, cancellation, investigator records and graph checkpoints. Shared inputs/configurations remain. |
+| Investigator | Associated evidence is removed with its originating independent benchmark; no separate automatic TTL. |
+| Optimization | Reports and trial evidence are retained; trial deletion is rejected. No automatic TTL or destructive experiment-delete command is introduced. Offline retention needs a reviewed coherent archive of experiment, trials, snapshots and checkpoints. |
+| Debugger | Authenticated debugger DELETE removes the debug record and its checkpoint when admission allows; retained replay evidence is separate from the originating benchmark. |
+| Langfuse/backups | Separate operator retention/deletion; local API deletion does not propagate. |
+
+
+Local benchmark/investigation/optimization/debugger records have no automatic TTL: they remain until an operator uses supported application deletion or an approved offline retention procedure. Shared uploaded inputs/configurations and immutable copies are retained independently of benchmark deletion. Backups also contain sensitive evidence; restrict access, encrypt at rest in operator storage and apply an explicit retention schedule (recommended starting policy: 7 daily/4 weekly backups after a restore drill). This recommendation is not configured automation. Do not delete dependency records of active work or claim local deletion propagates to Langfuse.
 
 ```powershell
 python -m scripts.monitor --output reports/operations.json

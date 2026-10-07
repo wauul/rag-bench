@@ -121,7 +121,9 @@ jobs:
           docker tag "ragbench-$VARIANT:candidate" "$IMAGE:$REVISION"
           docker push "$IMAGE:$VERSION"
           docker push "$IMAGE:$REVISION"
-          DIGEST=$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE:$VERSION")
+          export IMAGE
+          docker image inspect "$IMAGE:$VERSION" > published-image.json
+          DIGEST=$(python -c 'import json,os; refs=json.load(open("published-image.json"))[0]["RepoDigests"]; r=[v for v in refs if v.startswith(os.environ["IMAGE"]+"@")]; assert len(r)==1,"Published registry digest missing or ambiguous"; print(r[0])')
           printf 'name=%s\ndigest=%s\n' "$IMAGE" "${DIGEST##*@}" >> "$GITHUB_OUTPUT"
           export DIGEST
           python -c 'import json,os; from pathlib import Path; Path(os.environ["VARIANT"]+".json").write_text(json.dumps({"revision":os.environ["REVISION"],"image":os.environ["DIGEST"]}))'

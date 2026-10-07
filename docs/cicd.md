@@ -4,7 +4,7 @@
 
 ## Flow
 
-PR → Engineering (Windows/Linux quality, security, CPU/compact containers, PostgreSQL) → **Engineering gate** → protected main. Real local models remain a separate, credential-free workflow. An immutable `vX.Y.Z` tag on main reruns Engineering and real models, builds and tests actual CPU/compact/dashboard images, scans them, produces SPDX SBOMs, then waits for the `release` environment reviewer. Publishing loads the tested archives instead of rebuilding, pushes version/full-commit tags to GHCR and produces OIDC build/SBOM attestations and `release-manifest`.
+PR â†’ Engineering (Windows/Linux quality, security, CPU/compact containers, PostgreSQL) â†’ **Engineering gate** â†’ protected main. Real local models remain a separate, credential-free workflow. An immutable `vX.Y.Z` tag on main reruns Engineering and real models, builds and tests actual CPU/compact/dashboard images, scans them, produces SPDX SBOMs, then waits for the `release` environment reviewer. Publishing loads the tested archives instead of rebuilding, pushes version/full-commit tags to GHCR and produces OIDC build/SBOM attestations and `release-manifest`.
 
 Authorized live evaluation uses the `evaluation` environment and a signed release digest. It runs the existing optimizer against isolated fictional sample data with a durable HTTP-attempt ceiling. This exploratory report cannot promote production. Production requires a separately reviewed repeated-baseline policy and complete independent evaluation bound to the exact revision, digest, dataset, prompt, model and evaluator. Missing/stale/incomplete evidence and quota failures fail closed.
 
@@ -20,7 +20,7 @@ Actions are pinned to verified official commit SHAs. Workflow permissions defaul
 
 ## Repository settings
 
-Verified owner: `wauul`. Main protection was configured with strict `Engineering gate`, mandatory PRs, conversation resolution, admin enforcement and no force pushes/deletion. Required review count is zero because a solo owner cannot approve their own PR. Release/evaluation/production environments require owner review and restrict deployment refs respectively to tags `v*`, branch `main`, branch `main`. Protection of a dedicated dashboard release branch remains an activation prerequisite. Environment reviews protect provider-spend/publishing/deployment independently of merge checks.
+Verified owner: `wauul`. Main protection was configured with strict `Engineering gate`, mandatory PRs, conversation resolution, admin enforcement and no force pushes/deletion. Required review count is zero because a solo owner cannot approve their own PR. Release/evaluation/production environments require owner review and restrict deployment refs respectively to tags `v*`, branch `main`, branch `main`. `codex/dashboard-release` was also prepared at the existing deployed revision with strict Engineering gate/admin enforcement and no force pushes/deletion. Restricting individual push users is unavailable on a personal repository; owner access is not presented as organization-level separation. Streamlit still needs an approved coordinate change to use that branch. Environment reviews protect provider-spend/publishing/deployment independently of merge checks.
 
 ```powershell
 uv sync --locked --extra backend --extra cpu --extra compact --extra dashboard --extra models
