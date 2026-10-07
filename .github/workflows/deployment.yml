@@ -1,0 +1,77 @@
+name: Deploy approved release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Existing immutable version tag (vX.Y.Z)
+        required: true
+        type: string
+      backend_mode:
+        description: Existing Render service type
+        required: true
+        type: choice
+        options: [source, image]
+permissions:
+  contents: read
+concurrency:
+  group: production-delivery
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: '0.12.19'
+      - run: uv sync --locked --extra backend --extra compact
+      - name: Download only a successful tag release from this repository
+        env:
+          VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python -c 'import os,re; assert re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+",os.environ["VERSION"])'
+          REVISION=$(git rev-parse "$VERSION^{commit}")
+          export REVISION
+          gh run list --repo wauul/rag-bench --workflow release.yml --event push --branch "$VERSION" --json databaseId,conclusion,headSha --limit 30 > release-runs.json
+          RUN=$(python -c 'import json,os; r=[r for r in json.load(open("release-runs.json")) if r["conclusion"]=="success" and r["headSha"]==os.environ["REVISION"]]; assert r,"No successful source-matching tag release"; print(r[0]["databaseId"])')
+          gh run download "$RUN" --repo wauul/rag-bench --name release-manifest --dir release
+          python -c 'import json,os; r=json.load(open("release/release.json")); assert r["revision"]==os.environ["REVISION"]'
+          printf 'REVISION=%s\n' "$REVISION" >> "$GITHUB_ENV"
+      - name: Verify signed artifacts and measured quality before deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python -c 'import json; r=json.load(open("release/release.json")); print("\n".join(r["images"].values()))' > images.txt
+          while IFS= read -r image; do
+            gh attestation verify "oci://$image" --repo wauul/rag-bench --signer-workflow wauul/rag-bench/.github/workflows/release.yml
+          done < images.txt
+          IMAGE=$(python -c 'import json; print(json.load(open("release/release.json"))["images"]["compact"])')
+          uv run --no-sync python -m scripts.quality_gate "evaluations/promotions/$REVISION.json" evaluations/promotion-policy.json --revision "$REVISION" --image "$IMAGE"
+      - name: Require actual external setup and deploy without changing hosting
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_API_SERVICE_ID: ${{ vars.RENDER_API_SERVICE_ID }}
+          API_TOKEN: ${{ secrets.API_TOKEN }}
+          API_URL: ${{ vars.API_URL }}
+          DASHBOARD_URL: ${{ vars.DASHBOARD_URL }}
+          DASHBOARD_APPROVED_REVISION: ${{ vars.DASHBOARD_APPROVED_REVISION }}
+          MODE: ${{ inputs.backend_mode }}
+        run: |
+          python -c 'import os; assert all(os.environ.get(k) for k in ("RENDER_API_KEY","RENDER_API_SERVICE_ID","API_TOKEN","API_URL","DASHBOARD_URL","DASHBOARD_APPROVED_REVISION")),"Required production setup is missing"'
+          uv run --no-sync python -m scripts.deploy release/release.json --backend-mode "$MODE" --dashboard-mode streamlit --evidence reports/deployment.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: production-deployment-evidence
+          path: reports/deployment.json
+          if-no-files-found: error
+          retention-days: 90

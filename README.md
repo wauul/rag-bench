@@ -1,15 +1,15 @@
 ---
 title: RAG Bench API
-emoji: ◈
+emoji: â—ˆ
 colorFrom: green
 colorTo: blue
 sdk: docker
 app_port: 8000
 ---
 
-# ◈ RAG Bench
+# â—ˆ RAG Bench
 
-Compare 2–4 retrieval configurations on one document set and one reference test set. Inspect real generated answers, retrieved passages and four Ragas metrics in a separate Streamlit dashboard.
+Compare 2â€“4 retrieval configurations on one document set and one reference test set. Inspect real generated answers, retrieved passages and four Ragas metrics in a separate Streamlit dashboard.
 
 **Status (September 15, 2026):** The full local sample passed with 20 answers and all 80 finite Ragas scores; 11 automated tests passed. The hosted dashboard and API are deployed, and real hosted scoring, charts and passage inspection were checked. A complete error-free hosted run remains unverified after Groq quota errors. Further testing was stopped at the owner's request. No fabricated benchmark scores are shipped.
 
@@ -21,6 +21,13 @@ The previously successful local run is `6b74daea575e4a09842f4953c4b05f07`. Its r
 
 ### Current development changes
 
+**Interactive retrieval debugger** adds new-question retrieval, durable review before
+optional generation, candidate/reranking/context inspection, exact prompts, separate
+history and usage, JSON export, historical answer inspection/replay and two-run
+comparison. Debug runs never affect benchmark scores or call Ragas. See the
+[debugger workflow, trace schema and retention guide](docs/retrieval-debugger.md).
+Hosted availability remains separate from this local implementation.
+
 **Guided configuration optimization** adds reviewable seeded retrieval experiments,
 an enforced provider-attempt budget, frozen tuning/held-out splits, baseline comparison,
 cancellation/resume, report export and saving observed configurations. Start from a
@@ -29,33 +36,31 @@ outcome; results do not establish a global optimum. See the
 [workflow and budget guide](docs/guided-optimization.md). Hosted availability is separate
 from local implementation.
 
-Configurations now separate **retrieval candidates** (`candidate_k`, 1–40) from **final passages** (`context_k`, 1–8). Reranking selects the final passages from the larger pool. The dashboard includes paginated **History**, **Retry missing work**, **Cancel run**, and separate processed/fully-scored progress counts. Generation and individual metric results are checkpointed to PostgreSQL when configured, or local SQLite. The Dev Container installs both applications and starts both servers. The Neon migration has automated recovery coverage and a real Groq smoke check through both engines; see the storage guide for evidence boundaries.
+Configurations now separate **retrieval candidates** (`candidate_k`, 1â€“40) from **final passages** (`context_k`, 1â€“8). Reranking selects the final passages from the larger pool. The dashboard includes paginated **History**, **Retry missing work**, **Cancel run**, and separate processed/fully-scored progress counts. Generation and individual metric results are checkpointed to PostgreSQL when configured, or local SQLite. The Dev Container installs both applications and starts both servers. The Neon migration has automated recovery coverage and a real Groq smoke check through both engines; see the storage guide for evidence boundaries.
 
 The dashboard now has a responsive card layout, numbered navigation and a three-step readiness checklist. MiniLM and BGE presets make setup quicker; selected configurations can be edited or removed before evaluation. Results separate the score overview from answer inspection, with readable score cards and expandable evidence passages. History supports configuration-name/run-ID search and status filters on the current page.
 
-New runs also record a durable performance profile. **Results → Performance** compares indexing, generation and scoring time, sampled backend RAM, Groq HTTP attempts and reported tokens. Phase, metric and model-loading details can be downloaded as CSV/JSON. Profiling accumulates across retries without repeating measurements for saved answers or scores.
+New runs also record a durable performance profile. **Results â†’ Performance** compares indexing, generation and scoring time, sampled backend RAM, Groq HTTP attempts and reported tokens. Phase, metric and model-loading details can be downloaded as CSV/JSON. Profiling accumulates across retries without repeating measurements for saved answers or scores.
 
 ## Architecture
 
 ```text
-Streamlit dashboard → FastAPI → SQLite (documents, test sets, configurations, results)
-                          └→ WordPiece windows → local Sentence Transformers
-                             → persistent Chroma collection per run/configuration
-                             → optional local cross-encoder → Groq answer
-                             → Ragas + Groq judge + fixed local judge embeddings
+Streamlit dashboard â†’ FastAPI â†’ SQLite (documents, test sets, configurations, results)
+                          â””â†’ WordPiece windows â†’ local Sentence Transformers
+                             â†’ persistent Chroma collection per run/configuration
+                             â†’ optional local cross-encoder â†’ Groq answer
+                             â†’ Ragas + Groq judge + fixed local judge embeddings
 ```
 
 Generation and judging both use `qwen/qwen3.8-27b` through Groq's free quota, with reasoning disabled to conserve tokens. The originally requested `llama-3.1-8b-instant` was [retired for free/developer accounts on August 16, 2026](https://console.groq.com/docs/deprecations). Set `GROQ_MODEL` to select an available Qwen or GPT-OSS model; Qwen uses `reasoning_effort=none` and GPT-OSS uses `low`. The tool does not silently switch models within a run. Retrieval compares `sentence-transformers/all-MiniLM-L6-v2` with `BAAI/bge-small-en-v1.5`. Optional reranking uses `cross-encoder/ms-marco-MiniLM-L-6-v2`. All inference except generation/judging runs on the backend CPU. Streamlit only calls the API.
 
 ## Local setup (Python 3.11+)
 
-Use the two `requirements.txt` files. CPU PyTorch avoids unnecessary CUDA dependencies:
+`uv.lock` is authoritative; generated requirements are compatibility exports. Use the tested Python 3.11 runtime and CPU-only PyTorch:
 
 ```powershell
 uv python install 3.11
-uv venv --python 3.11 .venv
-uv pip install --python .venv/Scripts/python.exe torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
-uv pip install --python .venv/Scripts/python.exe -r backend/requirements.txt -r dashboard/requirements.txt
+uv sync --locked --extra backend --extra cpu --extra dashboard
 Copy-Item .env.example .env
 ```
 
@@ -73,19 +78,19 @@ Start two terminals from the repository root:
 
 Open [the dashboard](http://localhost:8501) and click **Run sample benchmark**. It uploads the fictional Harbor Community Lab handbook, stores ten reference questions, creates two configurations, and immediately starts a real evaluation. First use downloads all three open models to the Hugging Face cache (`~/.cache/huggingface`); allow several hundred MB of downloads and several GB for installed dependencies. CPU execution and Groq quota pacing can make a full run take many minutes.
 
-Chroma persists vectors under `data/chroma`; metadata and result checkpoints persist in `data/bench.sqlite3`. Collection names include both run and configuration UUIDs. Model downloads are reused. Keep **one backend process/worker**; the executor serializes runs. A restart marks interrupted runs failed while preserving saved passages, answers and individual metric scores. Use **Retry missing work** to resume them.
+When `DATABASE_URL` is configured, Neon/PostgreSQL is authoritative and local Chroma/model paths are rebuildable caches. Otherwise SQLite persists metadata under `data/bench.sqlite3` and local Chroma vectors under `data/chroma`. Graph checkpoints use the matching authoritative store. Collection names include both run and configuration UUIDs. Model downloads are reused. Keep **one backend process/worker**; the executor serializes runs. A restart marks interrupted runs failed while preserving saved passages, answers and individual metric scores. Use **Retry missing work** to resume them.
 
 ## Add your data
 
-1. **Setup:** upload 1–10 PDFs, TXT or Markdown files (UTF-8). Limits: 5 MB/file, 100 pages/PDF and 150,000 extracted characters/set. Scanned PDFs need OCR outside this tool.
-2. Upload a CSV with `question,reference` columns (`expected_answer` is an alias), upload a JSON array of those objects, or enter pairs in the editable table. Accepts 1–20 questions. `sample_data/questions.json` is a complete example.
-3. Add 2–4 configurations using the presets or the custom builder: chunk tokens, overlap, model, final passage count, candidate count and reranking. Edit or remove selected configurations as needed. Change one parameter at a time for controlled experiments.
+1. **Setup:** upload 1â€“10 PDFs, TXT or Markdown files (UTF-8). Limits: 5 MB/file, 100 pages/PDF and 150,000 extracted characters/set. Scanned PDFs need OCR outside this tool.
+2. Upload a CSV with `question,reference` columns (`expected_answer` is an alias), upload a JSON array of those objects, or enter pairs in the editable table. Accepts 1â€“20 questions. `sample_data/questions.json` is a complete example.
+3. Add 2â€“4 configurations using the presets or the custom builder: chunk tokens, overlap, model, final passage count, candidate count and reranking. Edit or remove selected configurations as needed. Change one parameter at a time for controlled experiments.
 4. Click **Continue to evaluation** after the checklist is complete, then **Run evaluation**. Progress polls automatically and distinguishes processed answers from fully scored answers. Reopen saved runs through **History**, or use a run ID. Cancel or retry missing work from **Evaluation** or **Results**.
 5. Open **Results** for metric means, valid counts and bars/radar in **Score overview**. Use **Inspect answers** to compare reference answers, generated answers and supporting passages. CSV exports contain one row per configuration/question, all scores, contexts, errors and latency.
 
 The sample compares multiple changes at once to demonstrate the interface; its winner cannot establish which individual setting caused an improvement.
 
-Both demo configurations send two final passages per question to conserve free judge quota. MiniLM retrieves two candidates; BGE reranks twelve candidates and keeps two. Custom configurations support 1–40 candidates and 1–8 final passages, with candidates at least as large as the final count. Without reranking, the dashboard uses the final count as the candidate count.
+Both demo configurations send two final passages per question to conserve free judge quota. MiniLM retrieves two candidates; BGE reranks twelve candidates and keeps two. Custom configurations support 1â€“40 candidates and 1â€“8 final passages, with candidates at least as large as the final count. Without reranking, the dashboard uses the final count as the candidate count.
 
 ## What the metrics mean
 
@@ -98,11 +103,11 @@ Both demo configurations send two final passages per question to conserve free j
 
 Higher is generally better. Relevancy is based on cosine similarity and is not a calibrated probability (it can theoretically be negative); the other metrics are fractions in [0,1]. The bar chart includes a small negative margin; use tables/CSV for the exact scores. An equal-weight arithmetic mean is shown as a convenience only when **every question and metric succeeds for every configuration**. Ties are named. No statistical significance claim is made.
 
-We pin Ragas 0.3.9 and use its real single-turn metric API. To conserve free quota, prompts retain Ragas's instructions and JSON schemas but omit few-shot examples by default (`JUDGE_EXAMPLES=0`). Set this to 1–3 to include up to that many built-in examples per prompt. Prompt settings are fixed for a run and recorded in provenance; changing prompts can affect scores. The Groq adapter obtains relevancy's three completions through separate calls, handling Groq's `n=1` restriction and nested reasoning-token metadata. We keep relevancy embeddings fixed across configurations so changing the retriever does not also change the measurement. NaN, API failures and judge parsing errors appear as **missing**, never as fabricated zeros. Partial summaries include valid sample counts and cannot declare an overall winner.
+We pin Ragas 0.3.9 and use its real single-turn metric API. To conserve free quota, prompts retain Ragas's instructions and JSON schemas but omit few-shot examples by default (`JUDGE_EXAMPLES=0`). Set this to 1â€“3 to include up to that many built-in examples per prompt. Prompt settings are fixed for a run and recorded in provenance; changing prompts can affect scores. The Groq adapter obtains relevancy's three completions through separate calls, handling Groq's `n=1` restriction and nested reasoning-token metadata. We keep relevancy embeddings fixed across configurations so changing the retriever does not also change the measurement. NaN, API failures and judge parsing errors appear as **missing**, never as fabricated zeros. Partial summaries include valid sample counts and cannot declare an overall winner.
 
 ## Chunking and reranking
 
-Sliding windows use one shared MiniLM WordPiece tokenizer, with configurable overlap. Source substrings retain original case and page metadata. Windows stop at document/page boundaries. Sizes are limited to 32–240 tokens to fit MiniLM's 256-token window; overlap must be smaller than the size. Long questions may be truncated by embedding models, so keep questions concise.
+Sliding windows use one shared MiniLM WordPiece tokenizer, with configurable overlap. Source substrings retain original case and page metadata. Windows stop at document/page boundaries. Sizes are limited to 32â€“240 tokens to fit MiniLM's 256-token window; overlap must be smaller than the size. Long questions may be truncated by embedding models, so keep questions concise.
 
 BGE queries receive its retrieval instruction prefix. Both models output normalized vectors; Chroma uses cosine distance. Retrieve `candidate_k` chunks, optionally score/order them with a cross-encoder, then keep `context_k` passages for generation and evaluation. A larger candidate pool lets reranking select evidence that would have been omitted by a smaller vector-only top-k. It still cannot recover chunks outside that candidate pool. If a document produces fewer chunks than requested, use the available chunks.
 
@@ -114,7 +119,7 @@ Legacy API input and stored configurations using `top_k` remain supported: it be
 
 Choose **Existing pipeline** (the default, including historical configurations) or
 **LangChain + LangGraph** in the configuration editor. Compare both within the
-same 2–4 configuration benchmark, holding the other settings constant. Selecting
+same 2â€“4 configuration benchmark, holding the other settings constant. Selecting
 a framework does not imply better answers.
 
 The graph engine uses reusable LangChain retrieval/prompt components and separate
@@ -145,13 +150,13 @@ Interactive docs: [localhost:8000/docs](http://localhost:8000/docs).
 
 | Endpoint | Input / output |
 |---|---|
-| `POST /api/documents` | Multipart `files` → document set ID |
-| `POST /api/test-sets` | JSON `{name, questions: [{question, reference}]}` → test set |
-| `POST /api/test-sets/upload` | Multipart `file` (CSV/JSON) → test set |
-| `POST /api/configurations` | JSON configuration → stored configuration |
+| `POST /api/documents` | Multipart `files` â†’ document set ID |
+| `POST /api/test-sets` | JSON `{name, questions: [{question, reference}]}` â†’ test set |
+| `POST /api/test-sets/upload` | Multipart `file` (CSV/JSON) â†’ test set |
+| `POST /api/configurations` | JSON configuration â†’ stored configuration |
 | `POST /api/demo` | Creates the sample data and two configurations |
-| `POST /api/runs` | `{document_set_id, test_set_id, configuration_ids}` → run ID (202) |
-| `GET /api/runs` | Paginated compact history; `limit` (1–100), `offset`; returns `{runs, next_offset}` |
+| `POST /api/runs` | `{document_set_id, test_set_id, configuration_ids}` â†’ run ID (202) |
+| `GET /api/runs` | Paginated compact history; `limit` (1â€“100), `offset`; returns `{runs, next_offset}` |
 | `POST /api/runs/{id}/retry` | Resume a partial, failed or cancelled run using saved work (202) |
 | `POST /api/runs/{id}/cancel` | Request cancellation between operations, preserving results (202) |
 | `GET /api/runs/{id}` | Status, progress, configuration snapshots, provenance, summary, per-question results |
@@ -163,7 +168,7 @@ Interactive docs: [localhost:8000/docs](http://localhost:8000/docs).
 
 Run states: `queued`, `running`, `completed`, `partial`, `failed`, `cancelled`. A busy worker or incompatible retry returns 409; a missing Groq key returns 503; invalid input returns 422. A cancellation request does not interrupt an in-flight model or judge call: its result is saved before the worker stops. Runs expose `retrieved`, `completed` (processed answers), `scored` (fully successful answers), `valid_scores`, and a live `cancel_requested` flag. The API never sends its Groq key to Streamlit. Set `API_TOKEN` to require a bearer token on all `/api` endpoints when publicly hosting. Give the dashboard the same token through secrets.
 
-Startup validates `INFERENCE_BACKEND` (`sentence-transformers` or `onnx`), a nonempty `GROQ_MODEL`, finite `GROQ_REQUEST_INTERVAL` of at least 0.1 seconds, and integer `JUDGE_EXAMPLES` in 0–3. Invalid settings name the offending variable before a worker starts.
+Startup validates `INFERENCE_BACKEND` (`sentence-transformers` or `onnx`), a nonempty `GROQ_MODEL`, finite `GROQ_REQUEST_INTERVAL` of at least 0.1 seconds, and integer `JUDGE_EXAMPLES` in 0â€“3. Invalid settings name the offending variable before a worker starts.
 
 ## Performance profiling
 
@@ -215,7 +220,7 @@ Opening the Dev Container installs CPU Torch plus the backend and dashboard requ
 
 ## Free hosting and current deployment constraint
 
-**Render free and Railway free currently offer only 512 MB / 0.5 GB RAM.** The standard Sentence Transformers check measured approximately **749–824 MB RSS on Windows**, so `Dockerfile.render` provides a compact runtime using int8 ONNX exports of the same three models. It runs on CPU without importing PyTorch. `Dockerfile` retains the full Sentence Transformers runtime for local/larger hosts. `render.yaml` selects the compact image and the Free plan.
+**Render free and Railway free currently offer only 512 MB / 0.5 GB RAM.** The standard Sentence Transformers check measured approximately **749â€“824 MB RSS on Windows**, so `Dockerfile.render` provides a compact runtime using int8 ONNX exports of the same three models. It runs on CPU without importing PyTorch. `Dockerfile` retains the full Sentence Transformers runtime for local/larger hosts. `render.yaml` selects the compact image and the Free plan.
 
 The compact runtime measured approximately **320 MB RSS** with MiniLM, Chroma and all Ragas metrics loaded in the local check; deployed peak memory still needs verification. Original model tokenizers and pooling are preserved. Build-time ONNX weights come from each model's official Hugging Face repository; BGE is dynamically quantized during the build. Agreement checks across the ten sample questions and reference answers gave minimum cosine agreement **0.991 for MiniLM** and **0.986 for BGE** against the float32 Sentence Transformers implementation. The reranker's best passage was unchanged in the checked question. This is approximate inference, not bit-identical output; run provenance records `inference_backend` and `precision`.
 
@@ -237,14 +242,14 @@ Hugging Face was considered as an alternative because its documentation lists fr
 
 1. Sign in to Hugging Face and create a public **Docker / Blank** Space named `rag-bench-api`, choosing **CPU Basic / Free**. If a free option is unavailable or payment is requested, stop.
 2. Upload this repository's `Dockerfile`, `README.md`, `backend/` and `sample_data/` to the Space. The README metadata sets Docker's app port to 8000. Alternatively authenticate with `hf auth login` using a write-scoped token and run `python -m scripts.deploy_hf YOUR_USERNAME/rag-bench-api` to create/upload the Space.
-3. Space Settings → Variables and secrets → add `GROQ_API_KEY` and a randomly generated `API_TOKEN` as **secrets**. No credentials belong in the repository.
+3. Space Settings â†’ Variables and secrets â†’ add `GROQ_API_KEY` and a randomly generated `API_TOKEN` as **secrets**. No credentials belong in the repository.
 4. Wait for the Docker build; open the Space's direct `.hf.space` URL and append `/health` to check readiness. Use this direct host as Streamlit's `BACKEND_URL`.
 5. Set the same API token in Streamlit secrets. Verify the complete demo. Free Spaces may sleep and lose stored data on restart; export results.
 
 ### Render Free (compact runtime)
 
 1. Connect GitHub at [Render](https://dashboard.render.com/).
-2. New → Blueprint → select this repository. Review `render.yaml`: the plan must remain **Free**. Alternatively use New Web Service → Public Git Repository → `https://github.com/wauul/rag-bench`, choose Docker, set Dockerfile path to `Dockerfile.render`, and select Free.
+2. New â†’ Blueprint â†’ select this repository. Review `render.yaml`: the plan must remain **Free**. Alternatively use New Web Service â†’ Public Git Repository â†’ `https://github.com/wauul/rag-bench`, choose Docker, set Dockerfile path to `Dockerfile.render`, and select Free.
 3. Add `GROQ_API_KEY` and `API_TOKEN` as environment secrets. Blueprints generate the API token automatically; manual setup needs a random token. Keep both secret.
 4. Deploy, check `/health`, then run the actual demo and check for memory failures. A green health check alone does not prove the ML workload works.
 5. Copy the backend URL and API token into Streamlit secrets.
@@ -252,8 +257,8 @@ Hugging Face was considered as an alternative because its documentation lists fr
 ### Streamlit Community Cloud
 
 1. Sign in at [share.streamlit.io](https://share.streamlit.io/) and connect GitHub if needed.
-2. Create app → deploy an existing GitHub app. Repository: `wauul/rag-bench`; branch: `main`; main file: `dashboard/app.py`.
-3. Advanced settings → Python **3.11** → secrets:
+2. Create app â†’ deploy an existing GitHub app. Repository: `wauul/rag-bench`; branch: `main`; main file: `dashboard/app.py`.
+3. Advanced settings â†’ Python **3.11** â†’ secrets:
 
 ```toml
 BACKEND_URL = "https://YOUR-BACKEND-HOST"
@@ -274,9 +279,17 @@ API_TOKEN = "SAME-TOKEN-AS-BACKEND"
 - PDF text extraction does not provide OCR or sophisticated table reconstruction. Chunking is token-window-based, not semantic segmentation.
 ## Failure Investigator
 
-From **Results → Inspect answers**, open **Failure Investigator** to investigate
+From **Results â†’ Inspect answers**, open **Failure Investigator** to investigate
 a saved answer, inspect cited hypotheses and limitations, export JSON/Markdown,
 or create an editable configuration draft for a conditional experiment. Reports
 and additional model usage are stored separately from benchmark results. The
 feature uses LangChain structured Groq output and a durable, cancellable LangGraph
 workflow. See [scope, schema, usage limits and recovery](docs/failure-investigator.md).
+
+## Delivery and LLMOps status
+
+The existing benchmark engines, investigator, optimizer and debugger retain durable snapshots, explicit resume and separate accounting. Optional Langfuse tracing is disabled by default and accepts metadata only, with separate debugger/experiment opt-ins. Local records remain authoritative.
+
+Engineering now includes PostgreSQL recovery; tested artifact releases, signed publishing, bounded live sample evaluation and measured production gates are separate workflows. Existing hosting is Render source-backed compact backend plus Streamlit Community Cloud, with Neon authoritative storage. Publication, dashboard release-branch setup, credentials, quality baselines and live ingestion must be verified separately; implementation is not proof of activation.
+
+Read [CI/CD](docs/cicd.md), [deployment/rollback](docs/deployment.md), [operations/backup](docs/operations.md), [LLMOps/privacy](docs/llmops.md), [contributing](CONTRIBUTING.md), [security](SECURITY.md) and [release policy](docs/release-policy.md).

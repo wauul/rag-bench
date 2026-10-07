@@ -16,6 +16,7 @@ from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Upload
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from backend.debugger_api import install as install_debugger_routes
 from backend.ingestion import MAX_BYTES, MAX_TEXT, extract_document, parse_test_set
 from backend.investigation_api import install as install_investigation_routes
 from backend.models import METRICS, Configuration, RunRequest, TestSet
@@ -45,6 +46,10 @@ async def lifespan(app):
     with execution_lock(store, "server.lock"):
         try:
             with execution_lock(store):
+                for debug in store.list("debug_run"):
+                    if debug["status"] in {"queued", "running"}:
+                        debug.update(status="failed", error="Server restarted; resume saved stages")
+                        store.save("debug_run", debug, debug["id"])
                 for experiment in store.list("optimization"):
                     if experiment["status"] in {"queued", "running"}:
                         experiment.update(
@@ -85,6 +90,9 @@ async def lifespan(app):
                     )
             if isinstance(executor, ThreadPoolExecutor):
                 await asyncio.to_thread(executor.shutdown, wait=True)
+                from backend.observability import flush
+
+                flush()
 
 
 def authorize(authorization: str | None = Header(default=None)):
@@ -152,6 +160,22 @@ def fetch(kind, object_id):
         return store.get(kind, object_id)
     except KeyError:
         raise HTTPException(404, f"Unknown {kind} ID")
+
+
+@app.get("/api/observability/{workflow}/{record_id}", dependencies=auth)
+def observation_link(workflow: str, record_id: str):
+    from backend.observability import trace_link
+
+    kinds = {
+        "benchmark": "run",
+        "investigation": "investigation",
+        "optimization": "optimization",
+        "debugger": "debug_run",
+    }
+    if workflow not in kinds:
+        raise HTTPException(404, "Unknown workflow")
+    fetch(kinds[workflow], record_id)
+    return {"url": trace_link(workflow, record_id), "ingestion_verified": False}
 
 
 @app.get("/health")
@@ -325,6 +349,7 @@ def require_generation():
 
 install_investigation_routes(sys.modules[__name__])
 install_optimization_routes(sys.modules[__name__])
+install_debugger_routes(sys.modules[__name__])
 
 
 @app.post("/api/runs", dependencies=auth, status_code=202)

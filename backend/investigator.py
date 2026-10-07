@@ -14,6 +14,8 @@ from langgraph.graph import END, START, StateGraph
 from backend.graph_pipeline import checkpointer
 from backend.investigation_models import Diagnosis
 from backend.models import METRICS, Configuration
+from backend.observability import stage as observe_stage
+from backend.observability import workflow
 from backend.provenance import digest, implementation
 from backend.retrieval_trace import load_trace, trace_summary
 from backend.settings import load_settings
@@ -97,6 +99,9 @@ def create_record(store, run, request):
     }
     if len(json.dumps(inputs)) > 1_500_000 or len(row.get("answer", "")) > 24000:
         raise ValueError("Investigation input exceeds size limit")
+    from backend.prompts import resolve
+
+    resolved_prompt = resolve("ragbench-investigator", PROMPT, "investigator-" + VERSION)
     return {
         "schema_version": VERSION,
         "run_id": run["id"],
@@ -125,7 +130,8 @@ def create_record(store, run, request):
             "model": load_settings().model,
             "prompt_version": VERSION,
             "graph_version": VERSION,
-            "prompt_fingerprint": digest(PROMPT),
+            "prompt_fingerprint": digest(resolved_prompt["text"]),
+            "resolved_prompt": resolved_prompt,
             "dependencies": implementation()["dependencies"],
             "reasoning_effort": load_settings().reasoning_effort,
             "retrieval_runtime": load_settings().inference_backend,
@@ -311,10 +317,14 @@ def provider(record):
     from langchain_core.rate_limiters import InMemoryRateLimiter
     from langchain_groq import ChatGroq
 
+    from backend.profiling import ProfiledAsyncClient, ProfiledClient
+
     model = ChatGroq(
         model=record["provenance"]["model"],
         temperature=0,
         max_retries=0,
+        http_client=ProfiledClient(),
+        http_async_client=ProfiledAsyncClient(),
         timeout=60,
         max_tokens=3000,
         reasoning_effort=record["provenance"].get("reasoning_effort", "none"),
@@ -325,7 +335,10 @@ def provider(record):
         ),
     )
     prompt = ChatPromptTemplate.from_messages(
-        [("system", PROMPT), ("human", "UNTRUSTED EVIDENCE JSON:\n{evidence}\n{repair}")]
+        [
+            ("system", record["provenance"].get("resolved_prompt", {"text": PROMPT})["text"]),
+            ("human", "UNTRUSTED EVIDENCE JSON:\n{evidence}\n{repair}"),
+        ]
     )
     chain = prompt | model.with_structured_output(Diagnosis, method="json_schema", include_raw=True)
     payload = {
@@ -374,6 +387,7 @@ class Cancelled(Exception):
     pass
 
 
+@workflow("investigation", "investigation")
 def execute(store, investigation_id, cancel_event=None, model_call=None, source_search=None):
     from langsmith import tracing_context
 
@@ -386,6 +400,8 @@ def execute(store, investigation_id, cancel_event=None, model_call=None, source_
         record = store.get("investigation", investigation_id)
         if record["status"] == "completed":
             return record
+        record["execution_attempt"] = record.get("execution_attempt", 0) + 1
+        store.save("investigation", record, investigation_id)
 
         def save():
             record["updated_at"] = now()
@@ -406,7 +422,8 @@ def execute(store, investigation_id, cancel_event=None, model_call=None, source_
                 record.update(status="running", stage=name)
                 save()
                 if name == "load_snapshot" or name not in record["completed_stages"]:
-                    action()
+                    with observe_stage(name):
+                        action()
                     if name not in record["completed_stages"]:
                         record["completed_stages"].append(name)
                     save()
@@ -417,9 +434,14 @@ def execute(store, investigation_id, cancel_event=None, model_call=None, source_
         def load():
             if digest(record["inputs"]) != record["fingerprint"]:
                 raise ValueError("Investigation snapshot changed")
+            from backend.prompts import validate as validate_prompt
+
+            resolved = record["provenance"].get("resolved_prompt")
+            if resolved:
+                validate_prompt(resolved)
             if record["provenance"]["graph_version"] != VERSION or record["provenance"][
                 "prompt_fingerprint"
-            ] != digest(PROMPT):
+            ] != digest(resolved["text"] if resolved else PROMPT):
                 raise ValueError("Incompatible investigation graph or prompt")
 
         def validate():
@@ -531,7 +553,8 @@ def execute(store, investigation_id, cancel_event=None, model_call=None, source_
                     checkpoint()
                     record.update(status="running", stage=name)
                     save()
-                    action()
+                    with observe_stage(name):
+                        action()
                     return {"stage": name}
 
                 builder.add_node(name, wrap)

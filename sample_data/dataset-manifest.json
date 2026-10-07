@@ -1,0 +1,11 @@
+{
+  "version": "harbor-smoke-1",
+  "purpose": "synthetic smoke only; no generalization claim",
+  "approval": "repository sample data; not a promotion baseline",
+  "split_policy": "optimizer seed freezes tuning and held-out membership at plan creation",
+  "files": {
+    "sample_data/harbor-handbook.txt": "233e50e78961297a7b5c8452461b14a79a60d1f4e76140b608ab393fd7bd3cac",
+    "sample_data/questions.json": "ec216387f7f2d1858354d5aa3914d3c8968d24425d16bee86e53c3c0a072dfc2"
+  },
+  "checksum_encoding": "utf-8 LF normalized"
+}

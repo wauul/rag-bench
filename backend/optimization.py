@@ -9,6 +9,8 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from backend.models import MODELS, Configuration
+from backend.observability import stage as observe_stage
+from backend.observability import workflow
 from backend.provenance import digest, implementation, input_identity
 from backend.settings import load_settings
 
@@ -129,6 +131,8 @@ def create_plan(store, request):
     baseline.update(id="baseline", name="Baseline · " + baseline["name"][:48])
     choices, rejected, valid = candidates(baseline, request)
     split = split_questions(questions, request.seed, request.exploratory_acknowledged)
+    from backend.prompts import resolve
+
     frozen = {
         "version": VERSION,
         "request": request.model_dump(),
@@ -137,7 +141,11 @@ def create_plan(store, request):
         "split": split,
         "documents": documents,
         "questions": questions,
-        "provenance": {**load_settings().provenance(), **implementation()},
+        "provenance": {
+            **load_settings().provenance(),
+            **implementation(),
+            "generation_prompt": resolve(),
+        },
         "dataset_fingerprint": digest([documents, questions]),
         "selection_policy": POLICY,
     }
@@ -176,7 +184,10 @@ def validate_plan(record):
     frozen = record["plan"]
     if digest(frozen) != record["plan_fingerprint"] or frozen["version"] != VERSION:
         raise ValueError("Frozen experiment plan changed")
-    if frozen["provenance"] != {**load_settings().provenance(), **implementation()}:
+    if {k: v for k, v in frozen["provenance"].items() if k != "generation_prompt"} != {
+        **load_settings().provenance(),
+        **implementation(),
+    }:
         raise ValueError(
             "Restore the original models, prompts, dependencies and settings before resuming"
         )
@@ -297,6 +308,7 @@ class ExperimentState(TypedDict):
     stage: str
 
 
+@workflow("optimization", "optimization")
 def execute_experiment(store, experiment_id):
     import os
 
@@ -324,7 +336,8 @@ def execute_experiment(store, experiment_id):
                 budget.check()
                 record["stage"] = name
                 save()
-                action()
+                with observe_stage(name):
+                    action()
                 save()
                 return {"stage": name}
 

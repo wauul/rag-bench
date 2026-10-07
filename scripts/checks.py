@@ -10,6 +10,7 @@ def run(*args):
 
 if __name__ == "__main__":
     run("uv", "lock", "--check")
+    run(sys.executable, "-m", "scripts.export_requirements", "--check")
     run("uv", "pip", "check", "--python", sys.executable)
     run(
         sys.executable,

@@ -4,6 +4,8 @@ from uuid import uuid4
 
 import streamlit as st
 
+from dashboard.observability import trace_link
+
 
 def open_configuration_draft(api, investigation_id, index, edit_configuration, navigate):
     """Callbacks run before the sidebar navigation widget is instantiated."""
@@ -64,6 +66,7 @@ def investigation_panel(api, run_id, row, edit_configuration, navigate):
             key=key + "selected",
         )
         report = api("GET", f"/api/investigations/{selected}").json()
+        trace_link(api, "investigation", selected)
         st.caption(f"{report['status'].title()} · {report['stage'].replace('_', ' ')}")
         if report["status"] in {"queued", "running"}:
             if st.button("Cancel investigation", key=key + "cancel"):

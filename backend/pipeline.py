@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from backend.models import METRICS, MODELS
+from backend.observability import workflow
 from backend.profiling import ProfiledAsyncClient, ProfiledClient, RunProfiler, measure
 from backend.retrieval import embed, load_embedder, retrieve_questions
 from backend.run_state import (
@@ -183,17 +184,10 @@ def summarize(rows, configurations, expected_questions):
 
 
 def generate_answer(llm, row):
-    from backend.provenance import SYSTEM_PROMPT
+    from backend.chains import prompt_messages
 
-    context = "\n\n".join(
-        f"[{i + 1}] {c['source']} p.{c['page']}\n{c['text']}" for i, c in enumerate(row["contexts"])
-    )
-    response = llm.invoke(
-        [
-            ("system", SYSTEM_PROMPT),
-            ("human", f"PASSAGES:\n{context}\n\nQUESTION: {row['question']}"),
-        ]
-    )
+    row["prompt_messages"] = prompt_messages(row["question"], row["contexts"])
+    response = llm.invoke([(m["role"], m["content"]) for m in row["prompt_messages"]])
     if not isinstance(response.content, str) or not response.content.strip():
         raise ValueError("Generator returned no text answer")
     return response.content
@@ -268,6 +262,7 @@ def execute_run(store, run_id, cancel_event=None, retry=False):
         return _execute_run(store, run_id, cancel_event, retry)
 
 
+@workflow("benchmark", "run")
 def _execute_run(store, run_id, cancel_event=None, retry=False):
     import asyncio
 

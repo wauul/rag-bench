@@ -6,6 +6,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from dashboard.observability import trace_link
 from dashboard.ui import MODEL_LABELS
 
 
@@ -121,6 +122,7 @@ def optimization_page(api):
 
 def experiment_panel(api, identity):
     record = api("GET", "/api/optimizations/" + identity).json()
+    trace_link(api, "optimization", identity)
     plan, usage = record["plan"], record["usage"]
     split, request = plan["split"], plan["request"]
     st.subheader("Review plan" if record["status"] == "planned" else "Experiment progress")
@@ -262,6 +264,7 @@ def experiment_panel(api, identity):
 @st.fragment(run_every="4s")
 def poll_experiment(api, identity):
     record = api("GET", "/api/optimizations/" + identity).json()
+    trace_link(api, "optimization", identity)
     if record["status"] not in {"queued", "running", "cancelling"}:
         st.rerun(scope="app")
     trial = record.get("current_trial", {})

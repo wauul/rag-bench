@@ -18,7 +18,9 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from backend.profiling_report import row_profile
+from dashboard.debugger import debugger_page
 from dashboard.investigation import investigation_panel
+from dashboard.observability import trace_link
 from dashboard.optimization import optimization_page
 from dashboard.performance import performance_metrics, performance_panel
 from dashboard.ui import (
@@ -772,6 +774,10 @@ def answer_explorer(run):
                 )
                 st.caption(f"Generation and scoring · {row['latency_seconds']:.1f}s")
                 if row.get("answer") or row.get("contexts"):
+                    if st.button("Open retrieval debugger", key=f"debug_{config_id}_{index}"):
+                        st.session_state.debug_origin = (run["id"], config_id, index)
+                        st.session_state.next_page = "Retrieval debugger"
+                        st.rerun()
                     investigation_panel(
                         api,
                         run.get("id", st.session_state.get("run_id")),
@@ -836,6 +842,7 @@ def results():
         st.button("Browse history", on_click=navigate, args=("History",))
         return
     run = api("GET", f"/api/runs/{run_id}").json()
+    trace_link(api, "benchmark", run_id)
     scored, valid = score_counts(run)
     status_badge(run["status"])
     st.caption(
@@ -1024,6 +1031,7 @@ def sidebar():
             "Results": "03  Results",
             "History": "04  History",
             "Optimize configuration": "Optimize configuration",
+            "Retrieval debugger": "Retrieval debugger",
         }
         page = st.radio(
             "Workspace",
@@ -1069,6 +1077,7 @@ try:
         "Results": results,
         "History": history,
         "Optimize configuration": lambda: optimization_page(api),
+        "Retrieval debugger": lambda: debugger_page(api),
     }[page]()
 except (requests.RequestException, RuntimeError) as exc:
     st.error(str(exc))

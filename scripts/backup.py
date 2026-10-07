@@ -105,6 +105,8 @@ def main() -> None:
     parser.add_argument("source", type=Path)
     parser.add_argument("destination", type=Path)
     args = parser.parse_args()
+    if os.getenv("DATABASE_URL"):
+        raise ValueError("DATABASE_URL is set: use scripts.postgres_backup for authoritative data")
     (backup if args.operation == "backup" else restore)(args.source, args.destination)
     print(f"{args.operation} complete; private snapshot contents are not logged")
 
