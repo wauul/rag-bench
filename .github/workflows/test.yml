@@ -110,6 +110,7 @@ jobs:
       - name: Validate Compose and actual artifacts
         env:
           API_TOKEN: ci-test-only-token-with-at-least-32-characters
+          DASHBOARD_PASSWORD: ci-test-only-dashboard-password-at-least-32-characters
         run: |
           docker compose --env-file /dev/null config --quiet
           python -m scripts.container_smoke --api ragbench-api:test --dashboard ragbench-dashboard:test
