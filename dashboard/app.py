@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 
 from backend.profiling_report import row_profile
 from dashboard.access import admit_login
+from dashboard.accounts import api_key_controls, managed_login, sign_out
 from dashboard.charts import (
     chart,
     latency_chart,
@@ -74,14 +75,23 @@ if (
     if time.time() - st.session_state.get("authenticated_at", 0) > 3600:
         st.session_state.authenticated = False
     if not st.session_state.get("authenticated", False):
-        with st.container(key="login_layout"):
-            st.title("RAG Bench")
-            st.caption("Compare retrieval. Understand the evidence.")
+        if setting("ACCOUNT_LOGIN_ENABLED") == "true":
+            with st.container(key="login_layout"):
+                managed_login(BASE, TOKEN)
+            # Owner recovery and API/CLI keys remain available, deliberately secondary.
+        with (
+            st.expander("Operator or API access")
+            if setting("ACCOUNT_LOGIN_ENABLED") == "true"
+            else st.container(key="login_layout")
+        ):
+            if setting("ACCOUNT_LOGIN_ENABLED") != "true":
+                st.title("RAG Bench")
+                st.caption("Compare retrieval. Understand the evidence.")
             with st.form("login"):
                 supplied = st.text_input("Password or personal access key", type="password")
                 submitted = st.form_submit_button("Sign in", type="primary", width="stretch")
             st.caption(
-                "A private workspace. Use your personal access key or the workspace password."
+                "Operator access uses the workspace password. Scripts can use a personal access key."
             )
         if submitted and not admit_login():
             st.error("Too many sign-in attempts. Try again in one minute.")
@@ -1127,13 +1137,13 @@ def sidebar():
                 "Local retrieval, Groq answers and Ragas scores. Real evaluations use Groq quota and can take several minutes."
             )
             st.caption(
-                "Personal access keys isolate each user's runs. Uploaded data is sent to Groq for generation and evaluation. Inactive data expires after 30 days; retained work keeps its dependencies. The workspace password opens the owner's account."
+                "Your account keeps runs private. Uploaded data is sent to Groq for generation and evaluation. Inactive data expires after 30 days; retained work keeps its dependencies."
             )
+        api_key_controls(api)
         if st.session_state.get("authenticated") and st.button(
             "Sign out", icon=":material/logout:", width="stretch"
         ):
-            st.session_state.clear()
-            st.rerun()
+            sign_out(BASE)
         return page
 
 

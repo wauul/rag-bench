@@ -73,6 +73,9 @@ class Store:
                 db.execute(
                     "CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, token_hash TEXT UNIQUE NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, expires_at TEXT NOT NULL)"
                 )
+        from backend.accounts import initialize
+
+        initialize(self)
 
     @contextmanager
     def connect(self, operator=False):

@@ -27,6 +27,10 @@ def resolve(store, authorization):
     if not authorization or not authorization.startswith("Bearer "):
         raise ValueError("Bearer access key required")
     supplied = authorization.removeprefix("Bearer ")
+    if supplied.startswith("rb_session_"):
+        from backend.accounts import resolve as resolve_session
+
+        return resolve_session(store, supplied)
     digest = hashlib.sha256(supplied.encode()).hexdigest()
     with store.connect(operator=True) as db:
         row = db.execute(
@@ -37,6 +41,19 @@ def resolve(store, authorization):
         ).fetchone()
     if row is None:
         raise ValueError("Invalid or expired access key")
+    with store.connect(operator=True) as db:
+        linked = db.execute(
+            "SELECT subject,enabled FROM account_links WHERE user_id=%s"
+            if store.postgres
+            else "SELECT subject,enabled FROM account_links WHERE user_id=?",
+            (row[0],),
+        ).fetchone()
+        if linked:
+            if linked[1] != 1 or not store.postgres:
+                raise ValueError("Account access is unavailable")
+            from backend.accounts import verified_user
+
+            verified_user(db, linked[0])
     return row[0]
 
 
