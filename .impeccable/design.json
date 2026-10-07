@@ -1,0 +1,466 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-07T20:47:41.368168+00:00",
+  "title": "Design System: RAG Bench",
+  "extensions": {
+    "colorMeta": {
+      "lavender": {
+        "role": "primary",
+        "displayName": "Lavender",
+        "tonalRamp": [
+          "oklch(15% 0.19414 281.10)",
+          "oklch(26% 0.19414 281.10)",
+          "oklch(38% 0.19414 281.10)",
+          "oklch(49% 0.19414 281.10)",
+          "oklch(61% 0.19414 281.10)",
+          "oklch(72% 0.19414 281.10)",
+          "oklch(84% 0.19414 281.10)",
+          "oklch(95% 0.19414 281.10)"
+        ]
+      },
+      "control-lavender": {
+        "role": "primary",
+        "displayName": "Control Lavender",
+        "tonalRamp": [
+          "oklch(15% 0.20449 279.19)",
+          "oklch(26% 0.20449 279.19)",
+          "oklch(38% 0.20449 279.19)",
+          "oklch(49% 0.20449 279.19)",
+          "oklch(61% 0.20449 279.19)",
+          "oklch(72% 0.20449 279.19)",
+          "oklch(84% 0.20449 279.19)",
+          "oklch(95% 0.20449 279.19)"
+        ]
+      },
+      "teal": {
+        "role": "secondary",
+        "displayName": "Teal",
+        "tonalRamp": [
+          "oklch(15% 0.10773 181.13)",
+          "oklch(26% 0.10773 181.13)",
+          "oklch(38% 0.10773 181.13)",
+          "oklch(49% 0.10773 181.13)",
+          "oklch(61% 0.10773 181.13)",
+          "oklch(72% 0.10773 181.13)",
+          "oklch(84% 0.10773 181.13)",
+          "oklch(95% 0.10773 181.13)"
+        ]
+      },
+      "apricot": {
+        "role": "secondary",
+        "displayName": "Apricot",
+        "tonalRamp": [
+          "oklch(15% 0.12551 52.36)",
+          "oklch(26% 0.12551 52.36)",
+          "oklch(38% 0.12551 52.36)",
+          "oklch(49% 0.12551 52.36)",
+          "oklch(61% 0.12551 52.36)",
+          "oklch(72% 0.12551 52.36)",
+          "oklch(84% 0.12551 52.36)",
+          "oklch(95% 0.12551 52.36)"
+        ]
+      },
+      "rose": {
+        "role": "secondary",
+        "displayName": "Rose",
+        "tonalRamp": [
+          "oklch(15% 0.13292 336.16)",
+          "oklch(26% 0.13292 336.16)",
+          "oklch(38% 0.13292 336.16)",
+          "oklch(49% 0.13292 336.16)",
+          "oklch(61% 0.13292 336.16)",
+          "oklch(72% 0.13292 336.16)",
+          "oklch(84% 0.13292 336.16)",
+          "oklch(95% 0.13292 336.16)"
+        ]
+      },
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Canvas",
+        "tonalRamp": [
+          "oklch(15% 0.00541 274.97)",
+          "oklch(26% 0.00541 274.97)",
+          "oklch(38% 0.00541 274.97)",
+          "oklch(49% 0.00541 274.97)",
+          "oklch(61% 0.00541 274.97)",
+          "oklch(72% 0.00541 274.97)",
+          "oklch(84% 0.00541 274.97)",
+          "oklch(95% 0.00541 274.97)"
+        ]
+      },
+      "sidebar": {
+        "role": "neutral",
+        "displayName": "Sidebar",
+        "tonalRamp": [
+          "oklch(15% 0.01092 274.89)",
+          "oklch(26% 0.01092 274.89)",
+          "oklch(38% 0.01092 274.89)",
+          "oklch(49% 0.01092 274.89)",
+          "oklch(61% 0.01092 274.89)",
+          "oklch(72% 0.01092 274.89)",
+          "oklch(84% 0.01092 274.89)",
+          "oklch(95% 0.01092 274.89)"
+        ]
+      },
+      "panel": {
+        "role": "neutral",
+        "displayName": "Panel",
+        "tonalRamp": [
+          "oklch(15% 0.00000 89.88)",
+          "oklch(26% 0.00000 89.88)",
+          "oklch(38% 0.00000 89.88)",
+          "oklch(49% 0.00000 89.88)",
+          "oklch(61% 0.00000 89.88)",
+          "oklch(72% 0.00000 89.88)",
+          "oklch(84% 0.00000 89.88)",
+          "oklch(95% 0.00000 89.88)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "tonalRamp": [
+          "oklch(15% 0.04327 275.56)",
+          "oklch(26% 0.04327 275.56)",
+          "oklch(38% 0.04327 275.56)",
+          "oklch(49% 0.04327 275.56)",
+          "oklch(61% 0.04327 275.56)",
+          "oklch(72% 0.04327 275.56)",
+          "oklch(84% 0.04327 275.56)",
+          "oklch(95% 0.04327 275.56)"
+        ]
+      },
+      "muted-ink": {
+        "role": "neutral",
+        "displayName": "Muted Ink",
+        "tonalRamp": [
+          "oklch(15% 0.04062 271.07)",
+          "oklch(26% 0.04062 271.07)",
+          "oklch(38% 0.04062 271.07)",
+          "oklch(49% 0.04062 271.07)",
+          "oklch(61% 0.04062 271.07)",
+          "oklch(72% 0.04062 271.07)",
+          "oklch(84% 0.04062 271.07)",
+          "oklch(95% 0.04062 271.07)"
+        ]
+      },
+      "caption-ink": {
+        "role": "neutral",
+        "displayName": "Caption Ink",
+        "tonalRamp": [
+          "oklch(15% 0.04055 271.08)",
+          "oklch(26% 0.04055 271.08)",
+          "oklch(38% 0.04055 271.08)",
+          "oklch(49% 0.04055 271.08)",
+          "oklch(61% 0.04055 271.08)",
+          "oklch(72% 0.04055 271.08)",
+          "oklch(84% 0.04055 271.08)",
+          "oklch(95% 0.04055 271.08)"
+        ]
+      },
+      "panel-border": {
+        "role": "neutral",
+        "displayName": "Panel Border",
+        "tonalRamp": [
+          "oklch(15% 0.01522 273.84)",
+          "oklch(26% 0.01522 273.84)",
+          "oklch(38% 0.01522 273.84)",
+          "oklch(49% 0.01522 273.84)",
+          "oklch(61% 0.01522 273.84)",
+          "oklch(72% 0.01522 273.84)",
+          "oklch(84% 0.01522 273.84)",
+          "oklch(95% 0.01522 273.84)"
+        ]
+      },
+      "grid": {
+        "role": "neutral",
+        "displayName": "Grid",
+        "tonalRamp": [
+          "oklch(15% 0.00962 273.35)",
+          "oklch(26% 0.00962 273.35)",
+          "oklch(38% 0.00962 273.35)",
+          "oklch(49% 0.00962 273.35)",
+          "oklch(61% 0.00962 273.35)",
+          "oklch(72% 0.00962 273.35)",
+          "oklch(84% 0.00962 273.35)",
+          "oklch(95% 0.00962 273.35)"
+        ]
+      },
+      "lavender-wash": {
+        "role": "primary",
+        "displayName": "Lavender Wash",
+        "tonalRamp": [
+          "oklch(15% 0.02549 290.75)",
+          "oklch(26% 0.02549 290.75)",
+          "oklch(38% 0.02549 290.75)",
+          "oklch(49% 0.02549 290.75)",
+          "oklch(61% 0.02549 290.75)",
+          "oklch(72% 0.02549 290.75)",
+          "oklch(84% 0.02549 290.75)",
+          "oklch(95% 0.02549 290.75)"
+        ]
+      },
+      "lavender-deep": {
+        "role": "primary",
+        "displayName": "Lavender Deep",
+        "tonalRamp": [
+          "oklch(15% 0.17183 281.62)",
+          "oklch(26% 0.17183 281.62)",
+          "oklch(38% 0.17183 281.62)",
+          "oklch(49% 0.17183 281.62)",
+          "oklch(61% 0.17183 281.62)",
+          "oklch(72% 0.17183 281.62)",
+          "oklch(84% 0.17183 281.62)",
+          "oklch(95% 0.17183 281.62)"
+        ]
+      },
+      "lavender-mid": {
+        "role": "primary",
+        "displayName": "Lavender Mid",
+        "tonalRamp": [
+          "oklch(15% 0.12545 286.40)",
+          "oklch(26% 0.12545 286.40)",
+          "oklch(38% 0.12545 286.40)",
+          "oklch(49% 0.12545 286.40)",
+          "oklch(61% 0.12545 286.40)",
+          "oklch(72% 0.12545 286.40)",
+          "oklch(84% 0.12545 286.40)",
+          "oklch(95% 0.12545 286.40)"
+        ]
+      },
+      "nav-hover": {
+        "role": "neutral",
+        "displayName": "Nav Hover",
+        "tonalRamp": [
+          "oklch(15% 0.01786 275.63)",
+          "oklch(26% 0.01786 275.63)",
+          "oklch(38% 0.01786 275.63)",
+          "oklch(49% 0.01786 275.63)",
+          "oklch(61% 0.01786 275.63)",
+          "oklch(72% 0.01786 275.63)",
+          "oklch(84% 0.01786 275.63)",
+          "oklch(95% 0.01786 275.63)"
+        ]
+      },
+      "score-surface": {
+        "role": "neutral",
+        "displayName": "Score Surface",
+        "tonalRamp": [
+          "oklch(15% 0.00806 278.64)",
+          "oklch(26% 0.00806 278.64)",
+          "oklch(38% 0.00806 278.64)",
+          "oklch(49% 0.00806 278.64)",
+          "oklch(61% 0.00806 278.64)",
+          "oklch(72% 0.00806 278.64)",
+          "oklch(84% 0.00806 278.64)",
+          "oklch(95% 0.00806 278.64)"
+        ]
+      },
+      "ready-wash": {
+        "role": "secondary",
+        "displayName": "Ready Wash",
+        "tonalRamp": [
+          "oklch(15% 0.02206 171.78)",
+          "oklch(26% 0.02206 171.78)",
+          "oklch(38% 0.02206 171.78)",
+          "oklch(49% 0.02206 171.78)",
+          "oklch(61% 0.02206 171.78)",
+          "oklch(72% 0.02206 171.78)",
+          "oklch(84% 0.02206 171.78)",
+          "oklch(95% 0.02206 171.78)"
+        ]
+      },
+      "ready-ink": {
+        "role": "secondary",
+        "displayName": "Ready Ink",
+        "tonalRamp": [
+          "oklch(15% 0.09179 166.70)",
+          "oklch(26% 0.09179 166.70)",
+          "oklch(38% 0.09179 166.70)",
+          "oklch(49% 0.09179 166.70)",
+          "oklch(61% 0.09179 166.70)",
+          "oklch(72% 0.09179 166.70)",
+          "oklch(84% 0.09179 166.70)",
+          "oklch(95% 0.09179 166.70)"
+        ]
+      },
+      "pending-wash": {
+        "role": "neutral",
+        "displayName": "Pending Wash",
+        "tonalRamp": [
+          "oklch(15% 0.01096 274.89)",
+          "oklch(26% 0.01096 274.89)",
+          "oklch(38% 0.01096 274.89)",
+          "oklch(49% 0.01096 274.89)",
+          "oklch(61% 0.01096 274.89)",
+          "oklch(72% 0.01096 274.89)",
+          "oklch(84% 0.01096 274.89)",
+          "oklch(95% 0.01096 274.89)"
+        ]
+      },
+      "pending-ink": {
+        "role": "neutral",
+        "displayName": "Pending Ink",
+        "tonalRamp": [
+          "oklch(15% 0.03634 270.16)",
+          "oklch(26% 0.03634 270.16)",
+          "oklch(38% 0.03634 270.16)",
+          "oklch(49% 0.03634 270.16)",
+          "oklch(61% 0.03634 270.16)",
+          "oklch(72% 0.03634 270.16)",
+          "oklch(84% 0.03634 270.16)",
+          "oklch(95% 0.03634 270.16)"
+        ]
+      },
+      "neutral-series": {
+        "role": "neutral",
+        "displayName": "Neutral Series",
+        "tonalRamp": [
+          "oklch(15% 0.03535 272.01)",
+          "oklch(26% 0.03535 272.01)",
+          "oklch(38% 0.03535 272.01)",
+          "oklch(49% 0.03535 272.01)",
+          "oklch(61% 0.03535 272.01)",
+          "oklch(72% 0.03535 272.01)",
+          "oklch(84% 0.03535 272.01)",
+          "oklch(95% 0.03535 272.01)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Page heading",
+        "purpose": "Native page titles; narrower mobile override documented in DESIGN.md."
+      },
+      "metric": {
+        "displayName": "Metric value",
+        "purpose": "Tabular overview measurements."
+      },
+      "chart-label": {
+        "displayName": "Chart label",
+        "purpose": "Measured evidence labels and legends."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "navigation-feedback",
+        "value": "background-color 160ms ease-out, color 160ms ease-out",
+        "purpose": "Sidebar hover and selection; disabled under reduced motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "container-compact",
+        "value": "900px"
+      },
+      {
+        "name": "heading-compact",
+        "value": "720px"
+      },
+      {
+        "name": "stack-columns",
+        "value": "640px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Native primary-action visual treatment; runtime semantics stay in Streamlit.",
+      "html": "<button class=\"ds-primary\">New benchmark</button>",
+      "css": ".ds-primary {font-family:sans-serif;color:#20243b;background:#5b54df;color:white;border:0;border-radius:9px;min-height:44px;font-weight:600;} .ds-primary:focus-visible {outline:2px solid #655ce0;outline-offset:3px;}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Shared button radius, minimum height, and weight; native variant colors remain framework-owned.",
+      "html": "<button class=\"ds-secondary\">Explore this benchmark</button>",
+      "css": ".ds-secondary {font-family:sans-serif;color:#20243b;border-radius:9px;min-height:44px;font-weight:600;} .ds-secondary:focus-visible {outline:2px solid #655ce0;outline-offset:3px;}"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "description": "Text caret and theme colors; native input geometry remains framework-owned.",
+      "html": "<label class=\"ds-field-label\">Configuration name <input class=\"ds-field\" value=\"MiniLM baseline\"></label>",
+      "css": ".ds-field-label {font-family:sans-serif;color:#20243b;} .ds-field {font-family:sans-serif;color:#20243b;caret-color:#655ce0;} .ds-field:focus-visible {outline:auto;}"
+    },
+    {
+      "name": "Workspace Navigation",
+      "kind": "nav",
+      "refersTo": "navigation-selected",
+      "description": "Compact sidebar choices with cool hover, lavender selection, and keyboard focus.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Workspace\"><button aria-current=\"page\">Overview</button><button>Results</button></nav>",
+      "css": ".ds-nav {display:grid;gap:0.4rem;} .ds-nav button {font-family:sans-serif;color:#20243b;text-align:left;min-height:44px;padding:0.65rem 0.7rem;border-radius:10px;border:0;background:transparent;transition:background-color 160ms ease-out,color 160ms ease-out;} .ds-nav button:hover {background:#e3e6f3;} .ds-nav button[aria-current] {background:#655ce0;color:white;} .ds-nav button:focus-visible {outline:2px solid #655ce0;outline-offset:2px;} @media(prefers-reduced-motion:reduce) {.ds-nav button {transition:none;}}"
+    },
+    {
+      "name": "Sample Metadata Chip",
+      "kind": "chip",
+      "refersTo": "sample-chip",
+      "description": "Noninteractive compact metadata on the sample panel.",
+      "html": "<div class=\"ds-chip-canvas\"><span class=\"ds-chip\">Two configurations</span></div>",
+      "css": ".ds-chip-canvas {background:#eeecff;} .ds-chip {font-family:sans-serif;color:#5147b8;background:#ffffffad;border-radius:6px;padding:0.25rem 0.5rem;font-size:0.75rem;}"
+    },
+    {
+      "name": "Evidence Panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "Flat white border and shared panel radius; internal layout belongs to native containers.",
+      "html": "<section class=\"ds-panel\"><h2>Compare configurations</h2><p>Available measurements only.</p></section>",
+      "css": ".ds-panel {font-family:sans-serif;color:#20243b;background:white;border:1px solid #e2e5f0;border-radius:14px;} .ds-panel h2 {font-size:1.35rem;font-weight:680;letter-spacing:-0.025em;} .ds-panel p {color:#636b84;}"
+    },
+    {
+      "name": "Score Strip",
+      "kind": "custom",
+      "description": "Paired measurement cells, muted labels, and aligned figures.",
+      "html": "<div class=\"ds-score-strip\"><div><small>Faithfulness</small><strong>0.842</strong></div><div><small>Context recall</small><strong>—</strong></div></div>",
+      "css": ".ds-score-strip {font-family:sans-serif;display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;margin:0.6rem 0 0.8rem;} .ds-score-strip div {background:#f3f4fa;border-radius:9px;padding:0.65rem 0.8rem;} .ds-score-strip small {display:block;font-size:0.7rem;color:#636b84;} .ds-score-strip strong {font-size:1.05rem;color:#30364e;font-variant-numeric:tabular-nums;}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Comparison Canvas",
+    "overview": "A quiet, compact analytical workspace: cool surfaces, precise borders, one sans family, and a retained lavender, teal, apricot, and rose palette. Charts and tabular numbers carry the evidence; native Streamlit controls carry interaction and accessibility.\n\nThe visual system supports comparisons without claiming certainty beyond the saved measurements. Missing data stays visibly absent, partial scores stay qualified, and measurement scope stays close to its chart. Page composition belongs in `.impeccable/surfaces/dashboard.md`.",
+    "keyCharacteristics": [
+      "Cool, flat surfaces with restrained borders.",
+      "Stable configuration colors and tabular figures.",
+      "Native controls with clear focus and compact panels.",
+      "Visible uncertainty and explicit measurement scope."
+    ],
+    "rules": [
+      {
+        "name": "The Stable Series Rule",
+        "body": "Keep configuration colors in lavender, teal, apricot, rose order even when a measurement is missing; skip the absent mark, not its color slot.",
+        "section": "colors"
+      },
+      {
+        "name": "The Numeric Alignment Rule",
+        "body": "Use tabular figures for comparable measurements and retain their units and unavailable-value markers.",
+        "section": "typography"
+      },
+      {
+        "name": "The Narrow Evidence Rule",
+        "body": "Stack evidence panels on narrow screens and allow tab navigation to scroll without breaking tab labels.",
+        "section": "layout"
+      },
+      {
+        "name": "The Flat Panel Rule",
+        "body": "Separate evidence panels with tone and borders rather than introducing decorative elevation.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do preserve the retained four-color palette and stable configuration order.",
+      "Do keep native control semantics, labels, focus, and disabled states.",
+      "Do display missing measurements, partial-score qualifiers, and measurement scope explicitly.",
+      "Do keep comparison figures aligned with visible units and tabular scores."
+    ],
+    "donts": [
+      "Don't invent scores, winners from incomplete measurements, quota remaining, or dollar spend from HTTP counts.",
+      "Don't replace native controls with decorative imitations in the application.",
+      "Don't add shadows to evidence panels or break narrow-screen tab labels."
+    ]
+  }
+}

@@ -29,6 +29,15 @@ The previously successful local run is `6b74daea575e4a09842f4953c4b05f07`. Its r
 
 ### Current development changes
 
+**Visual workspace:** Overview opens with your latest 50 private benchmarks,
+configuration comparisons, recorded usage, activity, and outcomes. Results adds
+question-score heatmaps, quality versus generation-and-scoring time, processing-time
+distributions, and phase comparisons. Saved row times include scoring and recorded
+retries; they are not serving latency. Missing measurements remain unknown, and
+partial runs cannot declare an overall winner. Native mobile tabs scroll horizontally.
+Viewing saved work does not start generation. [DESIGN.md](DESIGN.md) records the
+shared palette and component rules.
+
 **Interactive retrieval debugger** adds new-question retrieval, durable review before
 optional generation, candidate/reranking/context inspection, exact prompts, separate
 history and usage, JSON export, historical answer inspection/replay and two-run

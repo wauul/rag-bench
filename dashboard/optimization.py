@@ -6,14 +6,16 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from dashboard.charts import COLORS, chart, theme
 from dashboard.observability import trace_link
-from dashboard.ui import MODEL_LABELS
+from dashboard.ui import MODEL_LABELS, header
 
 
 def optimization_page(api):
-    st.title("Optimize configuration")
-    st.write(
-        "Compare a bounded set of retrieval settings, then check the selected configuration on questions kept aside."
+    header(
+        "",
+        "Optimize configuration",
+        "Compare retrieval settings, then validate the selection on questions kept aside.",
     )
     history = api("GET", "/api/optimizations").json()["experiments"]
     # Stable labels prevent polling/status changes from invalidating the selection.
@@ -314,11 +316,12 @@ def comparison(results, title, empty_message="No saved results yet."):
             x="Serving seconds/question",
             y="Quality",
             color="Configuration",
+            color_discrete_sequence=COLORS,
             hover_data=["HTTP attempts", "Reported tokens"],
         )
-        figure.update_layout(font={"family": "sans-serif"}, margin={"t": 15, "b": 20})
+        figure.update_traces(marker_size=14)
         figure.update_yaxes(range=[-0.25, 1])
         figure.update_xaxes(rangemode="tozero")
-        st.plotly_chart(figure, width="stretch")
+        chart(theme(figure))
     with st.expander("Metric coverage and trial references"):
         st.json(results)

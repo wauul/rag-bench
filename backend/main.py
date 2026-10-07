@@ -498,8 +498,12 @@ def start_run(body: RunRequest):
 
 
 @app.get("/api/runs", dependencies=auth)
-def list_runs(limit: int = Query(default=50, ge=1, le=100), offset: int = Query(default=0, ge=0)):
-    items = store.run_history(limit + 1, offset)
+def list_runs(
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    include_summary: bool = False,
+):
+    items = store.run_history(limit + 1, offset, include_summary=include_summary)
     return {"runs": items[:limit], "next_offset": offset + limit if len(items) > limit else None}
 
 

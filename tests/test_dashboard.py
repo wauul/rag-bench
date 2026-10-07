@@ -10,7 +10,9 @@ APP = str(Path(__file__).resolve().parents[1] / "dashboard/app.py")
 
 def dashboard_test():
     # Allow cold Plotly/Streamlit imports on busy Windows and CI hosts.
-    return AppTest.from_file(APP, default_timeout=15)
+    app = AppTest.from_file(APP, default_timeout=15)
+    app.session_state["page"] = "Upload / Setup"
+    return app
 
 
 def test_setup_and_navigation_without_backend(monkeypatch):
@@ -91,17 +93,19 @@ def test_results_table_chart_and_drilldown(monkeypatch):
         app.run()
         assert not app.exception
         assert "A, B" in app.success[0].value
-        assert len(app.get("plotly_chart")) == 1
+        assert len(app.get("plotly_chart")) == 4
         assert len(app.dataframe) == 2
         assert any(t.value == "A test passage" for t in app.text)
         assert [tab.label for tab in app.tabs] == [
             "Score overview",
+            "Question scores",
+            "Quality & speed",
             "Inspect answers",
             "Performance",
         ]
         next(r for r in app.radio if r.label == "Comparison view").set_value("Radar").run()
         assert not app.exception
-        assert len(app.get("plotly_chart")) == 1
+        assert len(app.get("plotly_chart")) == 4
 
 
 def test_candidate_controls_send_separate_limits(monkeypatch):

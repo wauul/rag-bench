@@ -11,3 +11,7 @@ data/
 .tools/
 .coverage
 reports/
+.impeccable/review/
+.impeccable/questions/
+.impeccable/mocks/
+.impeccable/surface-choice.json

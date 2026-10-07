@@ -221,7 +221,7 @@ class Store:
             ).fetchall()
         return [row[0] if self.postgres else json.loads(row[0]) for row in rows]
 
-    def run_history(self, limit=50, offset=0):
+    def run_history(self, limit=50, offset=0, *, include_summary=False):
         from backend.identity import owner
 
         principal = owner.get()
@@ -237,6 +237,8 @@ class Store:
                 "configurations",
             )
             projection = ", ".join(f"'{field}', payload->'{field}'" for field in fields)
+            if include_summary:
+                projection += ", 'summary', payload->'summary', 'profile_summary', payload->'profiling'->'summary'"
             # Projection uses only the literal field allowlist above; values remain bound.
             with self.connect() as db:
                 rows = db.execute(
@@ -246,7 +248,14 @@ class Store:
                 ).fetchall()
             return [row[0] for row in rows]
         # Project compact fields inside SQLite: polling history does not decode passages/answers.
+        # Only fixed SQL literals are composed; principal/limit/offset remain bound parameters.
         with self.connect() as db:
+            summary_projection = (
+                ", 'summary', json_extract(payload, '$.summary'), "
+                "'profile_summary', json_extract(payload, '$.profiling.summary')"
+                if include_summary
+                else ""
+            )
             rows = db.execute(
                 """SELECT json_object(
                 'id', id, 'status', json_extract(payload, '$.status'),
@@ -256,7 +265,9 @@ class Store:
                 'completed', json_extract(payload, '$.completed'),
                 'total', json_extract(payload, '$.total'),
                 'scored', json_extract(payload, '$.scored'),
-                'configurations', json_extract(payload, '$.configurations'))
+                'configurations', json_extract(payload, '$.configurations')"""  # nosec B608
+                + summary_projection
+                + """)
                 FROM objects WHERE kind='run' AND (owner_id=? OR ? IS NULL)
                 ORDER BY json_extract(payload, '$.created_at') DESC, id DESC LIMIT ? OFFSET ?""",
                 (principal, principal, limit, offset),
