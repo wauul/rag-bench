@@ -43,6 +43,12 @@ def test_flow_requires_authenticated_start_and_private_verifier(account_client):
     )
     assert response.headers["referrer-policy"] == "no-referrer"
     assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
+    # CSP paths without a trailing slash match only that exact path, blocking
+    # /sign-in/social, /get-session and /token beneath the managed Auth API.
+    assert (
+        "connect-src 'self' https://test.neonauth.neon.tech/neondb/auth/;"
+        in response.headers["content-security-policy"]
+    )
     assert (
         client.post(
             "/auth/redeem", json={"flow": flow, "verifier": "x" * 32, "ticket": "t" * 32}

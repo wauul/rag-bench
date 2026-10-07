@@ -174,7 +174,7 @@ def login_page(flow=""):
             "Cache-Control": "no-store",
             "Referrer-Policy": "no-referrer",
             "X-Content-Type-Options": "nosniff",
-            "Content-Security-Policy": f"default-src 'none'; script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; connect-src 'self' {provider}; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+            "Content-Security-Policy": f"default-src 'none'; script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; connect-src 'self' {provider}/; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
         }
     )
     return response
