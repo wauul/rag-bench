@@ -20,6 +20,7 @@ def account_client(tmp_path, monkeypatch):
     monkeypatch.setenv("API_TOKEN", "o" * 32)
     monkeypatch.setenv("NEON_AUTH_URL", "https://test.neonauth.neon.tech/neondb/auth")
     monkeypatch.setenv("AUTH_GATEWAY_URL", "https://ragbench.example")
+    monkeypatch.setenv("DASHBOARD_URL", "https://ragbench.streamlit.app")
     return TestClient(main.app), store
 
 
@@ -42,13 +43,28 @@ def test_flow_requires_authenticated_start_and_private_verifier(account_client):
     )
     assert response.headers["referrer-policy"] == "no-referrer"
     assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
-    assert client.post("/auth/redeem", json={"flow": flow, "verifier": "x" * 32}).status_code == 403
-    assert client.post("/auth/redeem", json={"flow": flow, "verifier": "v" * 32}).status_code == 202
+    assert (
+        client.post(
+            "/auth/redeem", json={"flow": flow, "verifier": "x" * 32, "ticket": "t" * 32}
+        ).status_code
+        == 403
+    )
+    assert (
+        client.post(
+            "/auth/redeem", json={"flow": flow, "verifier": "v" * 32, "ticket": "t" * 32}
+        ).status_code
+        == 403
+    )
     other = TestClient(client.app)
     assert other.get("/auth/login", params={"flow": flow}).status_code == 400
     with store.connect(operator=True) as db:
         db.execute("UPDATE account_flows SET expires_at=0")
-    assert client.post("/auth/redeem", json={"flow": flow, "verifier": "v" * 32}).status_code == 400
+    assert (
+        client.post(
+            "/auth/redeem", json={"flow": flow, "verifier": "v" * 32, "ticket": "t" * 32}
+        ).status_code
+        == 400
+    )
 
 
 def test_identity_proof_and_origin_fail_closed(account_client, monkeypatch):
@@ -102,8 +118,11 @@ def test_single_use_redemption_stores_only_hash_and_revokes(account_client, monk
         db.execute(
             "INSERT INTO account_links(subject,user_id) VALUES (?,?)", ("verified-account", "alice")
         )
-        db.execute("UPDATE account_flows SET subject=? WHERE id=?", ("verified-account", flow))
-    body = {"flow": flow, "verifier": "v" * 32}
+        db.execute(
+            "UPDATE account_flows SET subject=?,ticket_hash=? WHERE id=?",
+            ("verified-account", accounts.digest("t" * 32), flow),
+        )
+    body = {"flow": flow, "verifier": "v" * 32, "ticket": "t" * 32}
     result = client.post("/auth/redeem", json=body)
     assert result.status_code == 200
     token = result.json()["token"]
@@ -133,15 +152,23 @@ def test_disabled_account_cannot_redeem(account_client, monkeypatch):
         db.execute(
             "INSERT INTO account_links(subject,user_id,enabled) VALUES ('account','alice',0)"
         )
-        db.execute("UPDATE account_flows SET subject='account'")
+        db.execute(
+            "UPDATE account_flows SET subject='account',ticket_hash=?", (accounts.digest("t" * 32),)
+        )
     # Failure never returns a session, even when operator persistence is unavailable.
-    assert client.post("/auth/redeem", json={"flow": flow, "verifier": "v" * 32}).status_code == 401
+    assert (
+        client.post(
+            "/auth/redeem", json={"flow": flow, "verifier": "v" * 32, "ticket": "t" * 32}
+        ).status_code
+        == 401
+    )
 
 
 def test_jwt_signature_issuer_audience_expiration_and_subject(monkeypatch):
     provider = "https://test.neonauth.neon.tech/neondb/auth"
     monkeypatch.setenv("NEON_AUTH_URL", provider)
     monkeypatch.setenv("AUTH_GATEWAY_URL", "https://ragbench.example")
+    monkeypatch.setenv("DASHBOARD_URL", "https://ragbench.streamlit.app")
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     monkeypatch.setattr(
         accounts,

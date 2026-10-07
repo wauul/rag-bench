@@ -16,7 +16,7 @@ from urllib.parse import urlsplit
 
 import jwt
 from fastapi import HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 
@@ -88,7 +88,11 @@ def initialize(store):
             expires_at BIGINT NOT NULL)""")
         db.execute("""CREATE TABLE IF NOT EXISTS account_flows (
             id TEXT PRIMARY KEY, challenge TEXT NOT NULL, cookie_hash TEXT,
-            subject TEXT, expires_at BIGINT NOT NULL)""")
+            subject TEXT, expires_at BIGINT NOT NULL, ticket_hash TEXT)""")
+        if store.postgres:
+            db.execute("ALTER TABLE account_flows ADD COLUMN IF NOT EXISTS ticket_hash TEXT")
+        elif "ticket_hash" not in {r[1] for r in db.execute("PRAGMA table_info(account_flows)")}:
+            db.execute("ALTER TABLE account_flows ADD COLUMN ticket_hash TEXT")
 
 
 def sql(store, text):
@@ -129,13 +133,14 @@ class Finish(BaseModel):
 
 class Redeem(Finish):
     verifier: str = Field(min_length=32, max_length=100)
+    ticket: str = Field(min_length=32, max_length=100)
 
 
 def live_flow(store, db, flow):
     row = db.execute(
         sql(
             store,
-            "SELECT challenge,cookie_hash,subject FROM account_flows WHERE id=? AND expires_at>?",
+            "SELECT challenge,cookie_hash,subject,ticket_hash FROM account_flows WHERE id=? AND expires_at>?",
         ),
         (flow, int(time.time())),
     ).fetchone()
@@ -146,10 +151,22 @@ def live_flow(store, db, flow):
 
 def login_page(flow=""):
     provider, origin, _, __ = configuration()
+    dashboard = os.getenv("DASHBOARD_URL", "").rstrip("/")
+    parsed = urlsplit(dashboard)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or not parsed.hostname.endswith(".streamlit.app")
+        or parsed.username
+        or parsed.query
+        or parsed.fragment
+        or parsed.path
+    ):
+        raise ValueError("Account dashboard destination is not configured")
     nonce = secrets.token_urlsafe(24)
-    config = json.dumps({"provider": provider, "origin": origin, "flow": flow}).replace(
-        "<", "\\u003c"
-    )
+    config = json.dumps(
+        {"provider": provider, "origin": origin, "flow": flow, "dashboard": dashboard}
+    ).replace("<", "\\u003c")
     html = Path(__file__).with_name("account_login.html").read_text(encoding="utf-8")
     response = HTMLResponse(html.replace("__CONFIG__", config).replace("__NONCE__", nonce))
     response.headers.update(
@@ -224,6 +241,7 @@ def install(app, get_store, auth):
     @app.post("/auth/finish")
     def finish(body: Finish, request: Request):
         provider, origin, _, __ = configuration()
+        ticket = secrets.token_urlsafe(32)
         if request.headers.get("origin") != origin:
             raise HTTPException(403, "Invalid sign-in origin")
         authorization = request.headers.get("authorization", "")
@@ -251,12 +269,17 @@ def install(app, get_store, auth):
                     (subject, user_id),
                 )
                 principal(store, db, subject)
-                db.execute("UPDATE account_flows SET subject=%s WHERE id=%s", (subject, body.flow))
+                db.execute(
+                    "UPDATE account_flows SET subject=%s,ticket_hash=%s,expires_at=%s WHERE id=%s",
+                    (subject, digest(ticket), int(time.time()) + 180, body.flow),
+                )
         except HTTPException:
             raise
         except Exception:
             raise HTTPException(401, "Sign-in could not be verified") from None
-        return {"complete": True}
+        # Only the browser presenting identity proof receives this secret. Polling
+        # with an initiator's verifier alone can never steal another browser's login.
+        return {"complete": True, "ticket": ticket}
 
     @app.post("/auth/redeem")
     def redeem(body: Redeem):
@@ -268,8 +291,8 @@ def install(app, get_store, auth):
             row = live_flow(store, db, body.flow)
             if not secrets.compare_digest(row[0], digest(body.verifier)):
                 raise HTTPException(403, "Invalid sign-in verifier")
-            if not row[2]:
-                return JSONResponse({"pending": True}, status_code=202)
+            if not row[2] or not row[3] or not secrets.compare_digest(row[3], digest(body.ticket)):
+                raise HTTPException(403, "Sign-in completion proof required")
             try:
                 verified_user(db, row[2])
                 user_id = principal(store, db, row[2])

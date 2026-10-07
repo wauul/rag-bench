@@ -7,26 +7,32 @@ Resend delivers verification and password-reset email. Review both providers'
 retention policies separately from Ragbench's experiment retention.
 
 The Streamlit server creates a ten-minute sign-in flow with a SHA-256 challenge.
-Its random verifier remains in that browser's server-side Streamlit session. A
-separate top-level sign-in tab handles Neon cookies and OAuth. Finishing requires
-the pinned provider's signed JWT, exact issuer/audience, verified active database
-account, exact Origin, and the matching HttpOnly browser cookie. No identity is
-accepted from email, browser-submitted profile claims, or user-editable metadata.
+A random, ten-minute Secure/SameSite browser nonce binds the return to that same
+browser. A separate top-level sign-in tab handles Neon cookies and OAuth.
+Finishing requires the pinned provider's signed JWT, exact issuer/audience,
+verified active database account, exact Origin, and matching HttpOnly gateway
+cookie. No identity is accepted from email or user-editable metadata.
 
-Streamlit polls using its private verifier, atomically redeems the result once,
-and receives a random one-hour session. Only its SHA-256 hash is stored. Every API
-request rechecks expiry, account enablement, verification and provider ban state.
-Logout revokes that dashboard session; revoked sessions cannot make further API
-requests. Sign-in/provider errors fail closed. Public handoff routes use durable
-socket-peer and global throttles and bounded request bodies. Unknown accounts get
-separate stable ownership IDs; they never inherit the owner's existing records.
+Only the browser that presents identity proof receives a random completion
+ticket. Its hash is stored, it expires after three minutes, and it is redeemed
+once together with the original dashboard browser nonce. A forwarded sign-in
+link, initiator-only polling, or a forwarded completion link cannot grant a
+session in another browser. The callback query is cleared before exchange.
+Actual API sessions remain server-side in Streamlit and only their SHA-256 hashes
+are stored in PostgreSQL. Every API request rechecks expiry, account enablement,
+verification and provider ban state. Logout revokes that dashboard session.
+
+Sign-in/provider errors fail closed. Public handoff routes use durable socket-peer
+and global throttles and bounded request bodies. Unknown accounts get separate
+stable ownership IDs; they never inherit the owner's existing records.
 
 Optional API/CLI keys expire in 30 days, are stored only as hashes and can be
 rotated/revoked in the sidebar. They remain bound to the managed account's active
 state. Legacy operator-provisioned keys and owner recovery are still supported.
 Never share the owner password or owner API token with regular users.
 
-Backend settings: `NEON_AUTH_URL`, `AUTH_GATEWAY_URL`, and pinned
+Backend settings: `NEON_AUTH_URL`, `AUTH_GATEWAY_URL`, `DASHBOARD_URL` (the exact
+HTTPS Streamlit app origin), and pinned
 `NEON_AUTH_ISSUER` / `NEON_AUTH_AUDIENCE` where needed. Dashboard setting:
 `ACCOUNT_LOGIN_ENABLED=true`. Enable verified email, custom SMTP and the GitHub
 OAuth provider in Neon; use only the exact gateway origin in trusted domains and

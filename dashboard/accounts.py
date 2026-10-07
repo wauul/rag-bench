@@ -1,6 +1,7 @@
 """Account sign-in UI. Provider credentials stay in the separate sign-in window."""
 
 import hashlib
+import json
 import secrets
 import time
 
@@ -11,6 +12,34 @@ from dashboard.access import admit_login
 
 
 def managed_login(base, operator_token):
+    # A forwarded gateway URL cannot grant a session: the returning browser must
+    # possess both its dashboard nonce and the ticket delivered after authentication.
+    ticket = st.query_params.get("rb_ticket")
+    flow = st.query_params.get("rb_flow")
+    if ticket or flow:
+        verifier = st.context.cookies.get("rb_auth_verifier", "")
+        st.query_params.clear()
+        if not verifier or not ticket or not flow:
+            st.error("Start sign-in from this dashboard in the same browser.")
+        else:
+            try:
+                response = requests.post(
+                    base + "/auth/redeem",
+                    json={"flow": flow, "verifier": verifier, "ticket": ticket},
+                    timeout=(10, 20),
+                )
+                response.raise_for_status()
+                data = response.json()
+                st.session_state.clear()
+                st.session_state.update(
+                    authenticated=True,
+                    authenticated_at=time.time(),
+                    api_token=data["token"],
+                    account_user=data["user_id"],
+                )
+                st.rerun()
+            except requests.RequestException:
+                st.error("Sign-in could not be verified. Start again.")
     st.title("RAG Bench")
     st.caption("Compare retrieval. Understand the evidence.")
     st.subheader("Welcome to your workspace")
@@ -45,39 +74,20 @@ def managed_login(base, operator_token):
         st.link_button(
             "Sign in with GitHub or email", pending["url"], type="primary", width="stretch"
         )
-        st.caption(
-            "Sign-in opens in a new tab. Keep this dashboard tab open; your workspace will appear here when you’re done."
+        # This short-lived nonce binds the callback to the initiating browser.
+        # It is not an API credential; all actual sessions stay server-side.
+        cookie = (
+            "rb_auth_verifier=" + pending["verifier"] + ";Max-Age=600;Path=/;Secure;SameSite=Lax"
         )
-
-        @st.fragment(run_every="5s")
-        def poll():
-            if time.time() - pending["started_at"] > 600:
-                st.session_state.pop("account_flow", None)
-                st.warning("Sign-in expired. Start again.")
-                st.rerun()
-            try:
-                response = requests.post(
-                    base + "/auth/redeem",
-                    json={"flow": pending["flow"], "verifier": pending["verifier"]},
-                    timeout=(5, 10),
-                )
-                if response.status_code == 200:
-                    data = response.json()
-                    st.session_state.clear()
-                    st.session_state.update(
-                        authenticated=True,
-                        authenticated_at=time.time(),
-                        api_token=data["token"],
-                        account_user=data["user_id"],
-                    )
-                    st.rerun()
-                elif response.status_code != 202:
-                    st.session_state.pop("account_flow", None)
-                    st.error("Sign-in expired or was interrupted. Start again.")
-            except requests.RequestException:
-                st.caption("Waiting for a connection to the sign-in service…")
-
-        poll()
+        st.html(
+            "<script>document.cookie=" + json.dumps(cookie) + ";</script>",
+            unsafe_allow_javascript=True,
+        )
+        st.caption("Sign-in opens in a new tab and returns you to your private workspace.")
+        if time.time() - pending["started_at"] > 600:
+            st.session_state.pop("account_flow", None)
+            st.warning("Sign-in expired. Start again.")
+            st.rerun()
         if st.button("Start again", width="stretch"):
             st.session_state.pop("account_flow", None)
             st.rerun()

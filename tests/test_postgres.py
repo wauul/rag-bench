@@ -29,6 +29,7 @@ def test_managed_accounts_single_use_isolation_and_revocation(pg_url, tmp_path, 
     monkeypatch.setenv("API_TOKEN", "o" * 32)
     monkeypatch.setenv("NEON_AUTH_URL", "https://test.neonauth.neon.tech/neondb/auth")
     monkeypatch.setenv("AUTH_GATEWAY_URL", "https://testserver")
+    monkeypatch.setenv("DASHBOARD_URL", "https://ragbench.streamlit.app")
     monkeypatch.setattr(accounts, "verified_subject", lambda token: "account-a")
     with store.connect(operator=True) as db:
         db.execute("CREATE SCHEMA neon_auth")
@@ -46,18 +47,33 @@ def test_managed_accounts_single_use_isolation_and_revocation(pg_url, tmp_path, 
         json={"challenge": accounts.digest(verifier)},
     ).json()["flow"]
     assert client.get("/auth/login", params={"flow": flow}).status_code == 200
+    finished = client.post(
+        "/auth/finish",
+        json={"flow": flow},
+        headers={"Origin": "https://testserver", "Authorization": "Bearer provider-proof"},
+    )
+    assert finished.status_code == 200
+    ticket = finished.json()["ticket"]
+    # Initiator-only polling cannot steal a victim's completed login.
+    assert client.post("/auth/redeem", json={"flow": flow, "verifier": verifier}).status_code == 422
     assert (
         client.post(
-            "/auth/finish",
-            json={"flow": flow},
-            headers={"Origin": "https://testserver", "Authorization": "Bearer provider-proof"},
+            "/auth/redeem", json={"flow": flow, "verifier": verifier, "ticket": "x" * 32}
         ).status_code
-        == 200
+        == 403
+    )
+    assert (
+        client.post(
+            "/auth/redeem", json={"flow": flow, "verifier": "x" * 32, "ticket": ticket}
+        ).status_code
+        == 403
     )
     with ThreadPoolExecutor(max_workers=2) as executor:
         replies = list(
             executor.map(
-                lambda _: client.post("/auth/redeem", json={"flow": flow, "verifier": verifier}),
+                lambda _: client.post(
+                    "/auth/redeem", json={"flow": flow, "verifier": verifier, "ticket": ticket}
+                ),
                 range(2),
             )
         )
