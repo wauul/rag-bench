@@ -46,7 +46,7 @@ benchmark answers, contexts, configuration, scores, completion, or profiling.
 References are diagnostic inputs only; benchmark generation's existing input
 allowlist remains unchanged.
 
-Report schema version `2` includes identity (`id`, `run_id`, `configuration_id`,
+Report schema version `3` includes identity (`id`, `run_id`, `configuration_id`,
 `question_index`, report `version`), input fingerprint, source snapshot identity,
 status/stage/timestamps/sanitized errors, `diagnosis` (summary, hypotheses with
 category/strength/rationale/supporting/contradicting quotes), evidence catalog,
@@ -85,7 +85,8 @@ second mutable report. Graph cursors never override the frozen application input
 
 Each investigation permits at most two provider requests total (initial plus one
 repair/retry), no SDK retries, 60 seconds per request, and 3,000 output tokens per
-request. Input snapshot JSON is limited to 1.5 MB, answer to 24,000 characters,
+request. Each provider call is paced using the saved `GROQ_REQUEST_INTERVAL`
+(default four seconds). Input snapshot JSON is limited to 1.5 MB, answer to 24,000 characters,
 and model evidence JSON to 80,000 characters; oversized model inputs fail honestly.
 Search does not generate model queries or rerank. Local model/index preparation
 uses existing bounded inputs and cancellation checkpoints; a native embedding
