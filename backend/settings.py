@@ -56,10 +56,14 @@ def load_settings():
 
 
 def validate_operations() -> None:
-    """Fail closed on public deployments; local development stays credential optional."""
+    """Credentials are required unless local development explicitly opts out."""
     environment = os.getenv("APP_ENV", "development")
     if environment not in {"development", "production"}:
         raise ValueError("APP_ENV must be development or production")
+    if not os.getenv("API_TOKEN") and os.getenv("RAGBENCH_ALLOW_INSECURE_LOCAL") != "true":
+        raise ValueError(
+            "API_TOKEN is required; insecure local access requires an explicit opt-out"
+        )
     if environment == "production":
         if len(os.getenv("API_TOKEN", "").strip()) < 32:
             raise ValueError("Production API_TOKEN must contain at least 32 characters")
@@ -67,5 +71,13 @@ def validate_operations() -> None:
             from backend.postgres import validate_database_url
 
             validate_database_url(os.environ["DATABASE_URL"])
+            from backend.postgres import connect
+
+            with connect(os.environ["DATABASE_URL"]) as db:
+                role = db.execute(
+                    "SELECT rolsuper,rolbypassrls FROM pg_roles WHERE rolname=current_user"
+                ).fetchone()
+                if role is None or any(role):
+                    raise ValueError("Production database role must not bypass row-level security")
         elif os.getenv("DATA_STORAGE") != "persistent":
             raise ValueError("Production requires DATA_STORAGE=persistent and a mounted disk")

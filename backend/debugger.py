@@ -119,7 +119,9 @@ def validate(record):
 
 @workflow("debugger", "debug_run")
 def execute(store, debug_id, event, generate=False, expected_context=None):
-    with execution_lock(store):
+    from backend.guardrails import policy_context
+
+    with execution_lock(store), policy_context(store):
         record = store.get("debug_run", debug_id)
         record.update(status="running", attempt=record["attempt"] + 1)
 
@@ -127,6 +129,9 @@ def execute(store, debug_id, event, generate=False, expected_context=None):
             store.save("debug_run", record, debug_id)
 
         def checkpoint():
+            from backend.guardrails import check
+
+            check(store)
             if event.is_set():
                 raise RunCancelled()
             try:

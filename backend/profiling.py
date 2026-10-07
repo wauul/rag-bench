@@ -266,6 +266,9 @@ class ProfiledClient(httpx.Client):
     """Wrap send so Groq SDK retries and transport failures are counted individually."""
 
     def send(self, request, **kwargs):
+        from backend.guardrails import reserve
+
+        reserve(request)
         from backend.optimization_budget import current_budget
 
         budget = current_budget()
@@ -289,6 +292,9 @@ class ProfiledClient(httpx.Client):
 
 class ProfiledAsyncClient(httpx.AsyncClient):
     async def send(self, request, **kwargs):
+        from backend.guardrails import reserve
+
+        reserve(request)
         from backend.optimization_budget import current_budget
 
         budget = current_budget()

@@ -20,12 +20,15 @@ def migrate(source: Path, database_url: str) -> dict:
     remote = Store(source / "migration-cache", database_url=database_url)
     with execution_lock(local, "server.lock"), execution_lock(local), execution_lock(remote):
         with remote.connect() as db:
-            if db.execute("SELECT COUNT(*) FROM objects").fetchone()[0]:
+            if db.execute("SELECT COUNT(*) FROM objects WHERE kind != 'guardrails'").fetchone()[0]:
                 raise ValueError(
                     "Migration target must be empty; existing data will not be overwritten"
                 )
         with local.connect() as db:
-            rows = db.execute("SELECT id, kind, payload FROM objects ORDER BY rowid").fetchall()
+            rows = db.execute(
+                "SELECT id, kind, payload, owner_id FROM objects ORDER BY rowid"
+            ).fetchall()
+            users = db.execute("SELECT id,token_hash,enabled,expires_at FROM users").fetchall()
         checkpoints = 0
         if (source / "langgraph.sqlite3").exists():
             from backend.graph_pipeline import checkpointer
@@ -55,11 +58,23 @@ def migrate(source: Path, database_url: str) -> dict:
                         new.put_writes(saved, writes, task)
                     checkpoints += 1
         with remote.connect() as db:
-            for identity, kind, encoded in rows:
+            # Replace only the freshly initialized policy, preserving source usage.
+            from backend.guardrails import POLICY_ID
+
+            policy = remote.get("guardrails", POLICY_ID)
+            if policy["usage"] or policy["rates"]:
+                raise ValueError("Migration target has existing guardrail activity")
+            db.execute("DELETE FROM objects WHERE id=%s AND kind='guardrails'", (POLICY_ID,))
+            for identity, kind, encoded, owner in rows:
                 json.loads(encoded)  # Validate before copying; preserve source payload exactly.
                 db.execute(
-                    "INSERT INTO objects(id, kind, payload) VALUES (%s, %s, %s::jsonb)",
-                    (identity, kind, encoded),
+                    "INSERT INTO objects(id, kind, payload,owner_id) VALUES (%s, %s, %s::jsonb,%s)",
+                    (identity, kind, encoded, owner),
+                )
+            for identity, digest, enabled, expires in users:
+                db.execute(
+                    "INSERT INTO users(id,token_hash,enabled,expires_at) VALUES (%s,%s,%s,%s)",
+                    (identity, digest, bool(enabled), expires),
                 )
         return {"objects": len(rows), "checkpoints": checkpoints}
 

@@ -254,9 +254,11 @@ def execute_run(store, run_id, cancel_event=None, retry=False):
     from langsmith import tracing_context
 
     from backend.execution_lock import execution_lock
+    from backend.guardrails import policy_context
 
     with (
         execution_lock(store),
+        policy_context(store),
         tracing_context(enabled=os.getenv("RAGBENCH_LANGSMITH", "false").lower() == "true"),
     ):
         return _execute_run(store, run_id, cancel_event, retry)
@@ -272,6 +274,9 @@ def _execute_run(store, run_id, cancel_event=None, retry=False):
     llm = None
 
     def checkpoint():
+        from backend.guardrails import check
+
+        check(store)
         from backend.execution_lock import assert_execution_lock
         from backend.optimization_budget import current_budget
 

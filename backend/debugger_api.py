@@ -68,7 +68,9 @@ def install(main):
                     main.run_lock.release()
 
             try:
-                main.executor.submit(worker)
+                from backend.identity import submit
+
+                submit(main.executor, worker)
             except Exception:
                 record.update(status="failed", error="Worker submission failed; resume explicitly")
                 main.store.save("debug_run", record, record["id"])

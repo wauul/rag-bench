@@ -392,9 +392,11 @@ def execute(store, investigation_id, cancel_event=None, model_call=None, source_
     from langsmith import tracing_context
 
     from backend.execution_lock import execution_lock
+    from backend.guardrails import policy_context
 
     with (
         execution_lock(store),
+        policy_context(store),
         tracing_context(enabled=os.getenv("RAGBENCH_LANGSMITH", "false").lower() == "true"),
     ):
         record = store.get("investigation", investigation_id)
@@ -408,6 +410,9 @@ def execute(store, investigation_id, cancel_event=None, model_call=None, source_
             store.save("investigation", record, investigation_id)
 
         def checkpoint():
+            from backend.guardrails import check
+
+            check(store)
             try:
                 store.get("investigation_cancel", investigation_id + "-cancel")
                 requested = True

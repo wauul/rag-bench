@@ -39,6 +39,8 @@ services:
     environment:
       BACKEND_URL: http://api:8000
       API_TOKEN: ${API_TOKEN:?Set API_TOKEN}
+      APP_ENV: production
+      DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:?Set a random dashboard password of at least 32 characters}
 volumes:
   ragbench-data:
   ragbench-cache:

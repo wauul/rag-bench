@@ -96,7 +96,7 @@ def providers(monkeypatch, store, identity, cancel_at=None, fail_metric=None):
         def invoke(self, value):
             assert "SECRET_REFERENCE" not in str(value)
             prompts.append(str(value))
-            self.http_client.post("https://provider.test/completions", json={})
+            self.http_client.post("https://provider.test/completions", json={"max_tokens": 2048})
             return SimpleNamespace(content="A saved answer")
 
     class Metric:
@@ -105,7 +105,9 @@ def providers(monkeypatch, store, identity, cancel_at=None, fail_metric=None):
 
         async def single_turn_ascore(self, sample, **kwargs):
             assert sample.reference == "SECRET_REFERENCE_EVAL_ONLY"
-            await self.llm.http_async_client.post("https://provider.test/completions", json={})
+            await self.llm.http_async_client.post(
+                "https://provider.test/completions", json={"max_tokens": 2048}
+            )
             if self.name == fail_metric:
                 raise TimeoutError()
             return 0.75

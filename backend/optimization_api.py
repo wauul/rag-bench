@@ -132,7 +132,9 @@ def install(main):
                 )
                 main.store.save("optimization", record, identity)
             try:
-                main.executor.submit(worker, identity)
+                from backend.identity import submit
+
+                submit(main.executor, worker, identity)
             except Exception:
                 main.store.fail_queued_optimization(identity)
                 raise

@@ -1,5 +1,6 @@
 """Real PostgreSQL tests; set RAGBENCH_TEST_POSTGRES_URL to a disposable local cluster."""
 
+import json
 import os
 import subprocess
 import sys
@@ -48,6 +49,70 @@ def test_remote_url_requires_tls_and_direct_endpoint():
         with pytest.raises(ValueError):
             validate_database_url(bad)
     validate_database_url("postgresql://u:p@ep-test.neon.tech/db?sslmode=require")
+
+
+def test_rls_denies_other_user_even_without_application_filter(pg_url, tmp_path):
+    from backend.identity import as_user
+
+    store = Store(tmp_path, database_url=pg_url)
+    with as_user("alice"):
+        private = store.save("documents", {"text": "alice private"})
+    with as_user("bob"):
+        assert store.list("documents") == []
+        with pytest.raises(KeyError):
+            store.get("documents", private["id"])
+        with pytest.raises(KeyError):
+            store.save("documents", {"text": "overwrite"}, private["id"])
+    role = "rls_" + uuid4().hex
+    with psycopg.connect(pg_url, autocommit=True) as db:
+        db.execute(sql.SQL("CREATE ROLE {} NOSUPERUSER NOBYPASSRLS").format(sql.Identifier(role)))
+        try:
+            db.execute(sql.SQL("GRANT SELECT,UPDATE ON objects TO {}").format(sql.Identifier(role)))
+            with db.transaction():
+                db.execute(sql.SQL("SET LOCAL ROLE {}").format(sql.Identifier(role)))
+                db.execute(
+                    "SELECT set_config('ragbench.owner','bob',true),set_config('ragbench.operator','false',true)"
+                )
+                assert (
+                    db.execute("SELECT id FROM objects WHERE id=%s", (private["id"],)).fetchall()
+                    == []
+                )
+                assert (
+                    db.execute(
+                        "UPDATE objects SET kind='test' WHERE id=%s", (private["id"],)
+                    ).rowcount
+                    == 0
+                )
+            with db.transaction():
+                db.execute(sql.SQL("SET LOCAL ROLE {}").format(sql.Identifier(role)))
+                assert db.execute("SELECT id FROM objects WHERE kind='documents'").fetchall() == []
+        finally:
+            db.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(role)))
+            db.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(role)))
+
+
+def test_postgres_retention_and_production_bypass_rejection(pg_url, tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    from backend.retention import sweep
+    from backend.settings import validate_operations
+
+    store = Store(tmp_path, database_url=pg_url)
+    document = store.save("documents", {"text": "expired private data"})
+    old = (datetime.now(timezone.utc) - timedelta(days=40)).isoformat()
+    with store.connect(operator=True) as db:
+        db.execute(
+            "UPDATE objects SET payload=jsonb_set(payload,'{retained_at}',%s::jsonb) WHERE id=%s",
+            (json.dumps(old), document["id"]),
+        )
+    assert sweep(store) == 1
+    with pytest.raises(KeyError):
+        store.get("documents", document["id"])
+    monkeypatch.setenv("DATABASE_URL", pg_url)
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("API_TOKEN", "x" * 32)
+    with pytest.raises(ValueError, match="row-level security"):
+        validate_operations()
 
 
 def test_crud_history_and_local_default(pg_url, tmp_path, monkeypatch):

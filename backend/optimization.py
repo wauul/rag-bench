@@ -317,12 +317,14 @@ def execute_experiment(store, experiment_id):
 
     from backend.execution_lock import execution_lock
     from backend.graph_pipeline import checkpointer
+    from backend.guardrails import policy_context
     from backend.optimization_budget import ExperimentBudget, budget_context
     from backend.pipeline import _execute_run
     from backend.run_state import RunCancelled
 
     with (
         execution_lock(store),
+        policy_context(store),
         tracing_context(enabled=os.getenv("RAGBENCH_LANGSMITH", "false").lower() == "true"),
     ):
         record = store.get("optimization", experiment_id)

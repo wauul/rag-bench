@@ -7,6 +7,14 @@ sdk: docker
 app_port: 8000
 ---
 
+**Access and cost controls:** credentials are now required by default for both API
+and dashboard. Configure `API_TOKEN` and `DASHBOARD_PASSWORD`; only isolated local
+development can opt out with `RAGBENCH_ALLOW_INSECURE_LOCAL=true`. See
+[workspace guardrails](docs/guardrails.md) for persistent usage caps, the live kill
+switch, per-user ownership and PostgreSQL RLS, ingress limits, automatic retention,
+Resend alerts and content deletion. Automatic API documentation routes
+are disabled. These source changes do not establish hosted rollout status.
+
 # â—ˆ RAG Bench
 
 Compare 2â€“4 retrieval configurations on one document set and one reference test set. Inspect real generated answers, retrieved passages and four Ragas metrics in a separate Streamlit dashboard.
