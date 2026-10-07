@@ -16,6 +16,9 @@ class ExperimentBudget:
         self.exhausted = False
 
     def check(self):
+        from backend.guardrails import check
+
+        check(self.store)
         try:
             signal = self.store.get("optimization_cancel", self.record["id"] + "-cancel")
             if signal["attempt"] == self.record["attempt"]:

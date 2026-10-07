@@ -2,7 +2,9 @@
 
 import hashlib
 import json
+import os
 from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
 
 from backend.models import MODEL_REVISIONS
 from backend.settings import load_settings
@@ -14,6 +16,9 @@ SYSTEM_PROMPT = (
     "If evidence is insufficient, say so. Be concise."
 )
 PACKAGES = (
+    "langfuse",
+    "psycopg",
+    "langgraph-checkpoint-postgres",
     "langchain-core",
     "langchain-groq",
     "langgraph",
@@ -45,6 +50,8 @@ def digest(value):
 
 
 def implementation():
+    from backend.prompts import judge_templates
+
     versions = {}
     for name in PACKAGES:
         try:
@@ -53,9 +60,20 @@ def implementation():
             versions[name] = None
     return {
         "pipeline_version": PIPELINE_VERSION,
+        "source_fingerprint": digest(
+            {
+                p.name: hashlib.sha256(
+                    p.read_text(encoding="utf-8").replace("\r\n", "\n").encode()
+                ).hexdigest()
+                for p in sorted(Path(__file__).parent.glob("*.py"))
+            }
+        ),
+        "hosted_model_revision": "provider-mutable-unavailable",
+        "prompt_version": "generation-1",
         "graph_version": GRAPH_VERSION,
         "dependencies": versions,
         "system_prompt": SYSTEM_PROMPT,
+        "judge_templates": judge_templates(load_settings().judge_examples),
         "generation_max_tokens": 2048,
         "provider_attempts": 2,
         "ragas_attempts": 1,
@@ -78,7 +96,11 @@ def input_identity(run):
 
 def snapshot_run(store, run):
     documents = store.get("documents", run["document_set_id"])["documents"]
+    from backend.prompts import resolve
+
     run["provenance"].update(implementation())
+    run["provenance"]["generation_prompt"] = resolve()
+    run["source_revision"] = os.getenv("APP_REVISION", os.getenv("RENDER_GIT_COMMIT", "local"))
     identity = {**input_identity(run), "documents": documents}
     fingerprint = digest(identity)
     store.save(

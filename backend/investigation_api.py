@@ -39,7 +39,9 @@ def install(main):
                     main.run_lock.release()
 
         try:
-            main.executor.submit(worker)
+            from backend.identity import submit
+
+            submit(main.executor, worker)
         except Exception:
             with main.control_lock:
                 main.cancel_events.pop(record["id"], None)

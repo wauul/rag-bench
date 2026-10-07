@@ -38,13 +38,27 @@ class JsonStateSerializer:
     """Checkpoints contain only primitive references; never deserialize Python objects."""
 
     def dumps_typed(self, value):
-        return "json", json.dumps(value, allow_nan=False).encode()
+        from langgraph.types import Interrupt
+
+        def encode(item):
+            if isinstance(item, Interrupt):
+                return {"__debug_interrupt__": True, "value": item.value, "id": item.id}
+            raise TypeError("Checkpoint contains unsupported non-primitive value")
+
+        return "json", json.dumps(value, allow_nan=False, default=encode).encode()
 
     def loads_typed(self, value):
         kind, data = value
         if kind != "json":
             raise ValueError("Unsupported checkpoint serialization")
-        return json.loads(data)
+        from langgraph.types import Interrupt
+
+        def decode(item):
+            if item.get("__debug_interrupt__") is True:
+                return Interrupt(value=item["value"], id=item["id"])
+            return item
+
+        return json.loads(data, object_hook=decode)
 
 
 @contextmanager
@@ -271,7 +285,12 @@ def execute_configuration(
                 save()
                 try:
                     with measure("generation", **labels):
-                        answer = answer_chain(llm).invoke(
+
+                        def capture_prompt(messages):
+                            row["prompt_messages"] = messages
+                            save()
+
+                        answer = answer_chain(llm, capture_prompt).invoke(
                             {
                                 "question": row["question"],
                                 "documents": to_documents(row["contexts"]),

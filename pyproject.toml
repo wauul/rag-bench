@@ -7,15 +7,33 @@ dependencies = []
 
 [project.optional-dependencies]
 backend = [
-  "fastapi==0.142.2", "uvicorn==0.35.0", "python-multipart==0.0.32",
-  "python-dotenv==1.2.4", "pydantic==2.11.7", "chromadb==1.5.9",
-  "ragas==0.3.9", "instructor>=1.12,<2", "tenacity==9.1.4",
-  "langchain-groq==1.1.3", "groq==0.37.1", "langchain-core==1.6.7",
-  "langchain==1.4.3", "langchain-community==0.3.31", "langchain-openai==1.6.7",
-  "langgraph==1.2.14", "langgraph-prebuilt==1.1.0", "langgraph-sdk==0.4.6",
-  "langgraph-checkpoint==4.2.0", "langgraph-checkpoint-sqlite==3.1.1",
-  "langgraph-checkpoint-postgres==3.1.2", "psycopg[binary]==3.3.6",
-  "pandas==2.3.2", "pypdf==6.19.0", "httpx==0.28.1", "psutil==7.0.0",
+  "fastapi==0.142.2",
+  "uvicorn==0.35.0",
+  "python-multipart==0.0.32",
+  "python-dotenv==1.2.4",
+  "pydantic==2.11.7",
+  "chromadb==1.5.9",
+  "ragas==0.3.9",
+  "instructor>=1.12,<2",
+  "tenacity==9.1.4",
+  "langchain-groq==1.1.3",
+  "groq==0.37.1",
+  "langchain-core==1.6.7",
+  "langchain==1.4.3",
+  "langchain-community==0.3.31",
+  "langchain-openai==1.6.7",
+  "langgraph==1.2.14",
+  "langgraph-prebuilt==1.1.0",
+  "langgraph-sdk==0.4.6",
+  "langgraph-checkpoint==4.2.0",
+  "langgraph-checkpoint-sqlite==3.1.1",
+  "langgraph-checkpoint-postgres==3.1.2",
+  "psycopg[binary]==3.3.6",
+  "pandas==2.3.2",
+  "pypdf==6.19.0",
+  "httpx==0.28.1",
+  "psutil==7.0.0",
+  "langfuse>=4.7,<5",
 ]
 cpu = ["sentence-transformers==6.1.0", "torch==2.8.0", "transformers==5.19.0"]
 compact = ["onnxruntime==1.22.1", "tokenizers==0.23.2", "huggingface-hub>=1,<2"]
@@ -50,7 +68,7 @@ select = ["E4", "E7", "E9", "F", "I"]
 [tool.mypy]
 python_version = "3.11"
 follow_imports = "silent"
-files = ["backend/settings.py", "backend/models.py", "backend/ingestion.py", "scripts/backup.py", "scripts/deploy.py", "scripts/smoke.py"]
+files = ["backend/settings.py", "backend/models.py", "backend/ingestion.py", "scripts/backup.py", "scripts/deploy.py", "scripts/smoke.py", "scripts/postgres_backup.py", "scripts/release_manifest.py", "scripts/quality_gate.py", "backend/prompts.py", "backend/observability.py", "backend/optimization_budget.py"]
 ignore_missing_imports = true
 check_untyped_defs = true
 warn_unused_ignores = true

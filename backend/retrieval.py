@@ -31,6 +31,8 @@ def chunk_documents(documents, config):
             doc["text"], add_special_tokens=False, return_offsets_mapping=True, truncation=False
         )["offset_mapping"]
         for start in range(0, len(offsets), config.chunk_size - config.overlap):
+            if len(chunks) >= 2000:
+                raise ValueError("Too many chunks; reduce document size or overlap")
             end = min(start + config.chunk_size, len(offsets))
             if end <= start:
                 break

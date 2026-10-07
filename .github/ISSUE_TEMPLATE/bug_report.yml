@@ -1,0 +1,15 @@
+name: Bug report
+description: Report a reproducible problem using synthetic data.
+body:
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+      description: Include workflow, source revision, storage mode and a minimal synthetic reproducer. Never include credentials or private evidence.
+    validations:
+      required: true
+  - type: textarea
+    id: recovery
+    attributes:
+      label: Recovery and verification
+      description: Describe cancellation/restart/resume, sanitized error kind and tests already run. Report vulnerabilities privately using SECURITY.md.

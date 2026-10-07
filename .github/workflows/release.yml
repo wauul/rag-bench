@@ -1,0 +1,168 @@
+name: Release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  engineering:
+    uses: ./.github/workflows/test.yml
+  models:
+    uses: ./.github/workflows/integration.yml
+  build:
+    needs: [engineering, models]
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: cpu
+            dockerfile: Dockerfile
+          - variant: compact
+            dockerfile: Dockerfile.render
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Validate protected release source and version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          git merge-base --is-ancestor HEAD origin/main
+          python -c 'import os,re,tomllib; t=os.environ["TAG"]; assert re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+",t); assert t[1:]==tomllib.load(open("pyproject.toml","rb"))["project"]["version"]'
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          load: true
+          tags: ragbench-${{ matrix.variant }}:candidate
+          build-args: APP_REVISION=${{ github.sha }}
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Dockerfile.dashboard
+          load: true
+          tags: ragbench-dashboard:candidate
+          build-args: APP_REVISION=${{ github.sha }}
+      - name: Test and scan the exact artifacts before any publishing
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          python -m scripts.install_tools
+          python -m scripts.container_smoke --api "ragbench-$VARIANT:candidate" --dashboard ragbench-dashboard:candidate
+          mkdir -p artifact
+          .tools/bin/trivy image --scanners vuln --format json --output artifact/scan.json "ragbench-$VARIANT:candidate"
+          python -m scripts.security --container artifact/scan.json
+          .tools/bin/trivy image --scanners vuln --format json --output artifact/dashboard-scan.json ragbench-dashboard:candidate
+          python -m scripts.security --container artifact/dashboard-scan.json
+          .tools/bin/trivy image --format spdx-json --output "artifact/$VARIANT.spdx.json" "ragbench-$VARIANT:candidate"
+          docker save "ragbench-$VARIANT:candidate" -o "artifact/$VARIANT.tar"
+          if [ "$VARIANT" = compact ]; then
+            docker save ragbench-dashboard:candidate -o artifact/dashboard.tar
+            .tools/bin/trivy image --format spdx-json --output artifact/dashboard.spdx.json ragbench-dashboard:candidate
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: validated-${{ matrix.variant }}
+          path: artifact/
+          if-no-files-found: error
+          retention-days: 3
+  publish:
+    needs: [engineering, models, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      artifact-metadata: write
+      id-token: write
+    strategy:
+      matrix:
+        variant: [cpu, compact, dashboard]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: validated-*
+          merge-multiple: true
+          path: artifact
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish tested image without rebuilding
+        id: image
+        env:
+          VARIANT: ${{ matrix.variant }}
+          VERSION: ${{ github.ref_name }}
+          REVISION: ${{ github.sha }}
+        run: |
+          docker load -i "artifact/$VARIANT.tar"
+          IMAGE="ghcr.io/wauul/rag-bench-$VARIANT"
+          for tag in "$VERSION" "$REVISION"; do
+            if docker manifest inspect "$IMAGE:$tag" >registry-result.txt 2>&1; then
+              echo "Release tag already exists; never overwrite" >&2
+              exit 1
+            fi
+            if ! grep -Eiq 'manifest unknown|no such manifest' registry-result.txt; then
+              echo "Cannot prove tag absence; registry access failed" >&2
+              exit 1
+            fi
+          done
+          docker tag "ragbench-$VARIANT:candidate" "$IMAGE:$VERSION"
+          docker tag "ragbench-$VARIANT:candidate" "$IMAGE:$REVISION"
+          docker push "$IMAGE:$VERSION"
+          docker push "$IMAGE:$REVISION"
+          export IMAGE
+          docker image inspect "$IMAGE:$VERSION" > published-image.json
+          DIGEST=$(python -c 'import json,os; refs=json.load(open("published-image.json"))[0]["RepoDigests"]; r=[v for v in refs if v.startswith(os.environ["IMAGE"]+"@")]; assert len(r)==1,"Published registry digest missing or ambiguous"; print(r[0])')
+          printf 'name=%s\ndigest=%s\n' "$IMAGE" "${DIGEST##*@}" >> "$GITHUB_OUTPUT"
+          export DIGEST
+          python -c 'import json,os; from pathlib import Path; Path(os.environ["VARIANT"]+".json").write_text(json.dumps({"revision":os.environ["REVISION"],"image":os.environ["DIGEST"]}))'
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.image.outputs.name }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.image.outputs.name }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          sbom-path: artifact/${{ matrix.variant }}.spdx.json
+          push-to-registry: true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digest-${{ matrix.variant }}
+          path: ${{ matrix.variant }}.json
+          if-no-files-found: error
+          retention-days: 90
+  manifest:
+    needs: [publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: digest-*
+          merge-multiple: true
+          path: digests
+      - name: Assemble source-bound release manifest
+        env:
+          REVISION: ${{ github.sha }}
+          VERSION: ${{ github.ref_name }}
+        run: python -m scripts.release_manifest digests --revision "$REVISION" --version "$VERSION"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-manifest
+          path: release.json
+          if-no-files-found: error
+          retention-days: 90

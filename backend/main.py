@@ -1,5 +1,4 @@
 import asyncio
-import hmac
 import io
 import json
 import os
@@ -7,7 +6,7 @@ import shutil
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 import pandas as pd
@@ -16,7 +15,8 @@ from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Upload
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from backend.ingestion import MAX_BYTES, MAX_TEXT, extract_document, parse_test_set
+from backend.debugger_api import install as install_debugger_routes
+from backend.ingestion import MAX_BYTES, MAX_TEXT, extract_bounded, extract_document, parse_test_set
 from backend.investigation_api import install as install_investigation_routes
 from backend.models import METRICS, Configuration, RunRequest, TestSet
 from backend.optimization_api import install as install_optimization_routes
@@ -45,6 +45,10 @@ async def lifespan(app):
     with execution_lock(store, "server.lock"):
         try:
             with execution_lock(store):
+                for debug in store.list("debug_run"):
+                    if debug["status"] in {"queued", "running"}:
+                        debug.update(status="failed", error="Server restarted; resume saved stages")
+                        store.save("debug_run", debug, debug["id"])
                 for experiment in store.list("optimization"):
                     if experiment["status"] in {"queued", "running"}:
                         experiment.update(
@@ -71,8 +75,14 @@ async def lifespan(app):
                 raise
             # Render's old instance may still be finishing its worker during replacement.
         try:
+            from backend.maintenance import maintain
+
+            maintenance = asyncio.create_task(maintain(store))
             yield
         finally:
+            maintenance.cancel()
+            with suppress(asyncio.CancelledError):
+                await maintenance
             with control_lock:
                 for event in cancel_events.values():
                     event.set()
@@ -85,15 +95,31 @@ async def lifespan(app):
                     )
             if isinstance(executor, ThreadPoolExecutor):
                 await asyncio.to_thread(executor.shutdown, wait=True)
+                from backend.observability import flush
+
+                flush()
 
 
 def authorize(authorization: str | None = Header(default=None)):
+    from backend.identity import resolve
+
     token = os.getenv("API_TOKEN", "")
-    if token and not hmac.compare_digest(authorization or "", "Bearer " + token):
+    if not token and os.getenv("RAGBENCH_ALLOW_INSECURE_LOCAL") != "true":
+        raise HTTPException(503, "API access is not configured")
+    try:
+        return resolve(store, authorization)
+    except ValueError:
         raise HTTPException(401, "Invalid API token")
 
 
-app = FastAPI(title="RAG Bench", version="1.0.0", lifespan=lifespan)
+app = FastAPI(
+    title="RAG Bench",
+    version="1.0.0",
+    lifespan=lifespan,
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
 auth = [Depends(authorize)]
 
 
@@ -123,9 +149,16 @@ class BodyLimitMiddleware:
         limit = 12 * 1024 * 1024
         total = 0
         chunks = []
+        deadline = asyncio.get_running_loop().time() + 30
         # No downstream parser runs until the bounded request body is complete.
         while True:
-            message = await receive()
+            try:
+                remaining = deadline - asyncio.get_running_loop().time()
+                message = await asyncio.wait_for(receive(), timeout=min(10, remaining))
+            except TimeoutError:
+                return await JSONResponse(
+                    status_code=408, content={"detail": "Body read timed out"}
+                )(scope, receive, send)
             if message["type"] == "http.disconnect":
                 return
             total += len(message.get("body", b""))
@@ -147,11 +180,85 @@ class BodyLimitMiddleware:
 app.add_middleware(BodyLimitMiddleware)
 
 
+class AdmissionMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or not (
+            scope["path"].startswith("/api/") or scope["path"] == "/ready"
+        ):
+            return await self.app(scope, receive, send)
+        from backend.guardrails import check, throttle
+        from backend.identity import as_user
+
+        write = scope["method"] not in {"GET", "HEAD", "OPTIONS"}
+        try:
+            # Socket peer only: never accept arbitrary X-Forwarded-For values.
+            peer = (scope.get("client") or ("unknown",))[0]
+            if not await asyncio.to_thread(throttle, store, "ip:" + peer, write):
+                raise HTTPException(429, "Request limit exceeded")
+            headers = dict(scope["headers"])
+            user = authorize(headers.get(b"authorization", b"").decode("latin1"))
+            if not await asyncio.to_thread(throttle, store, "user:" + user, write):
+                raise HTTPException(429, "User request limit exceeded")
+            if not await asyncio.to_thread(throttle, store, "workspace", write):
+                raise HTTPException(429, "Workspace request limit exceeded")
+            if write and scope["method"] != "DELETE" and not scope["path"].endswith("/cancel"):
+                await asyncio.to_thread(check, store)
+        except HTTPException as exc:
+            return await JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})(
+                scope, receive, send
+            )
+        except Exception:
+            return await JSONResponse(
+                status_code=503, content={"detail": "Workspace policy unavailable or disabled"}
+            )(scope, receive, send)
+        with as_user(user):
+            await self.app(scope, receive, send)
+
+
+app.add_middleware(AdmissionMiddleware)
+
+
+@app.get("/api/session", dependencies=auth)
+def session():
+    from backend.guardrails import locked
+    from backend.identity import owner
+
+    with locked(store) as (_, __, policy):
+        return {"user_id": owner.get(), "retention_days": policy.retention_days}
+
+
+@app.get("/api/guardrails", dependencies=auth)
+def guardrail_status():
+    from backend.guardrails import locked
+
+    with locked(store) as (_, state, policy):
+        return {"policy": policy.model_dump(), "usage": state["usage"]}
+
+
 def fetch(kind, object_id):
     try:
         return store.get(kind, object_id)
     except KeyError:
         raise HTTPException(404, f"Unknown {kind} ID")
+
+
+@app.get("/api/observability/{workflow}/{record_id}", dependencies=auth)
+def observation_link(workflow: str, record_id: str):
+    from backend.observability import trace_link
+
+    kinds = {
+        "benchmark": "run",
+        "investigation": "investigation",
+        "optimization": "optimization",
+        "debugger": "debug_run",
+    }
+    if workflow not in kinds:
+        raise HTTPException(404, "Unknown workflow")
+    fetch(kinds[workflow], record_id)
+    return {"url": trace_link(workflow, record_id), "ingestion_verified": False}
 
 
 @app.get("/health")
@@ -160,6 +267,11 @@ def health():
         "status": "ok",
         "generation_ready": bool(os.getenv("GROQ_API_KEY")),
         "authentication_required": bool(os.getenv("API_TOKEN")),
+        "guardrails_version": 2,
+        "user_isolation": True,
+        "alert_delivery_configured": all(
+            os.getenv(n) for n in ("RESEND_API_KEY", "ALERT_FROM", "ALERT_TO")
+        ),
         "storage": "postgres" if store.postgres else os.getenv("DATA_STORAGE", "unknown"),
         "revision": os.getenv("RENDER_GIT_COMMIT") or os.getenv("APP_REVISION", "local"),
     }
@@ -193,7 +305,9 @@ async def documents(files: list[UploadFile] = File(...)):
     try:
         for file in files:
             docs.extend(
-                extract_document(file.filename or "document.txt", await file.read(MAX_BYTES + 1))
+                await asyncio.to_thread(
+                    extract_bounded, file.filename or "document.txt", await file.read(MAX_BYTES + 1)
+                )
             )
         if sum(len(d["text"]) for d in docs) > MAX_TEXT:
             raise ValueError("Document set exceeds 150,000 characters")
@@ -303,7 +417,9 @@ def submit_run(run, retry=False):
     with control_lock:
         cancel_events[run["id"]] = event
     try:
-        executor.submit(worker, run["id"], event, retry)
+        from backend.identity import submit
+
+        submit(executor, worker, run["id"], event, retry)
     except Exception:
         with control_lock:
             cancel_events.pop(run["id"], None)
@@ -315,6 +431,12 @@ def submit_run(run, retry=False):
 
 
 def require_generation():
+    from backend.guardrails import check
+
+    try:
+        check(store)
+    except Exception:
+        raise HTTPException(503, "Workspace policy unavailable or disabled") from None
     if not os.getenv("GROQ_API_KEY"):
         raise HTTPException(503, "Set GROQ_API_KEY on the backend before running evaluations")
     try:
@@ -325,6 +447,7 @@ def require_generation():
 
 install_investigation_routes(sys.modules[__name__])
 install_optimization_routes(sys.modules[__name__])
+install_debugger_routes(sys.modules[__name__])
 
 
 @app.post("/api/runs", dependencies=auth, status_code=202)

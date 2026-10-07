@@ -14,6 +14,7 @@ class SharedIndex:
         self.documents = documents
         self.config, self.checkpoint = Configuration(**config), checkpoint
         self.model = self.collection = None
+        self.reused = False
         self.labels = {"configuration_id": config["id"]}
 
     def prepare(self):
@@ -33,6 +34,7 @@ class SharedIndex:
             metadata.get("fingerprint") == fingerprint
             and metadata.get("chunk_count") == self.collection.count()
         ):
+            self.reused = True
             with measure("index_reuse", **self.labels, cache="persisted_index"):
                 pass
             return

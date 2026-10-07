@@ -4,6 +4,7 @@ import hmac
 import math
 import os
 import sys
+import time
 from html import escape
 from pathlib import Path
 
@@ -18,7 +19,10 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from backend.profiling_report import row_profile
+from dashboard.access import admit_login
+from dashboard.debugger import debugger_page
 from dashboard.investigation import investigation_panel
+from dashboard.observability import trace_link
 from dashboard.optimization import optimization_page
 from dashboard.performance import performance_metrics, performance_panel
 from dashboard.ui import (
@@ -47,22 +51,47 @@ def setting(name, default=""):
 BASE = setting("BACKEND_URL", "http://127.0.0.1:8000").rstrip("/")
 TOKEN = setting("API_TOKEN")
 
-if setting("APP_ENV", "development") == "production":
+if (
+    setting("APP_ENV", "development") == "production"
+    or setting("RAGBENCH_ALLOW_INSECURE_LOCAL") != "true"
+):
     password = setting("DASHBOARD_PASSWORD")
     if len(password) < 32:
         st.error(
             "Dashboard access is not configured. Set a DASHBOARD_PASSWORD of at least 32 characters."
         )
         st.stop()
+    if time.time() - st.session_state.get("authenticated_at", 0) > 3600:
+        st.session_state.authenticated = False
     if not st.session_state.get("authenticated", False):
         with st.form("login"):
-            supplied = st.text_input("Workspace password", type="password")
+            supplied = st.text_input("Password or personal access key", type="password")
             submitted = st.form_submit_button("Sign in")
+        if submitted and not admit_login():
+            st.error("Too many sign-in attempts. Try again in one minute.")
+            st.stop()
         if submitted and hmac.compare_digest(supplied, password):
+            st.session_state.clear()
             st.session_state.authenticated = True
+            st.session_state.authenticated_at = time.time()
+            st.session_state.api_token = TOKEN
             st.rerun()
         elif submitted:
-            st.error("Invalid workspace password")
+            try:
+                response = requests.get(
+                    BASE + "/api/session",
+                    headers={"Authorization": "Bearer " + supplied},
+                    timeout=(10, 15),
+                )
+                if response.status_code == 200 and response.json().get("user_id") != "owner":
+                    st.session_state.clear()
+                    st.session_state.authenticated = True
+                    st.session_state.authenticated_at = time.time()
+                    st.session_state.api_token = supplied
+                    st.rerun()
+            except requests.RequestException:
+                pass
+            st.error("Invalid or expired credentials")
         st.stop()
 METRICS = ["faithfulness", "answer_relevancy", "context_precision", "context_recall"]
 MODELS = list(MODEL_LABELS)
@@ -80,7 +109,9 @@ def api(method, path, **kwargs):
         method,
         BASE + path,
         timeout=(10, 120),
-        headers={"Authorization": f"Bearer {TOKEN}"} if TOKEN else {},
+        headers={"Authorization": "Bearer " + st.session_state.get("api_token", TOKEN)}
+        if st.session_state.get("api_token", TOKEN)
+        else {},
         **kwargs,
     )
     if not response.ok:
@@ -416,6 +447,9 @@ def setup():
             type=["pdf", "txt", "md"],
             accept_multiple_files=True,
             help="PDFs need extractable text. Use UTF-8 for TXT and Markdown.",
+        )
+        st.caption(
+            "Your access key isolates your uploaded data and runs. Selected passages, questions, references and answers are sent to Groq. Inactive data expires after 30 days unless referenced by retained work. Export results you need to keep; use non-sensitive test data."
         )
         if st.button("Save documents", disabled=not files, width="stretch"):
             with st.spinner("Saving documents…"):
@@ -772,6 +806,10 @@ def answer_explorer(run):
                 )
                 st.caption(f"Generation and scoring · {row['latency_seconds']:.1f}s")
                 if row.get("answer") or row.get("contexts"):
+                    if st.button("Open retrieval debugger", key=f"debug_{config_id}_{index}"):
+                        st.session_state.debug_origin = (run["id"], config_id, index)
+                        st.session_state.next_page = "Retrieval debugger"
+                        st.rerun()
                     investigation_panel(
                         api,
                         run.get("id", st.session_state.get("run_id")),
@@ -836,6 +874,7 @@ def results():
         st.button("Browse history", on_click=navigate, args=("History",))
         return
     run = api("GET", f"/api/runs/{run_id}").json()
+    trace_link(api, "benchmark", run_id)
     scored, valid = score_counts(run)
     status_badge(run["status"])
     st.caption(
@@ -1007,7 +1046,7 @@ def history():
     if left.button("Newer runs", disabled=offset == 0, width="stretch"):
         st.session_state.history_offset = max(0, offset - 20)
         st.rerun()
-    middle.caption("Runs are stored in this shared workspace. Export results to keep a copy.")
+    middle.caption("Your runs are private to your access key. Export results to keep a copy.")
     if right.button("Older runs", disabled=response["next_offset"] is None, width="stretch"):
         st.session_state.history_offset = response["next_offset"]
         st.rerun()
@@ -1024,6 +1063,7 @@ def sidebar():
             "Results": "03  Results",
             "History": "04  History",
             "Optimize configuration": "Optimize configuration",
+            "Retrieval debugger": "Retrieval debugger",
         }
         page = st.radio(
             "Workspace",
@@ -1047,7 +1087,7 @@ def sidebar():
                 "Local retrieval, Groq answers and Ragas scores. Real evaluations use Groq quota and can take several minutes."
             )
             st.caption(
-                "Everyone with dashboard access shares the workspace and can view runs. Uploaded data is sent to Groq for generation and evaluation."
+                "Personal access keys isolate each user's runs. Uploaded data is sent to Groq for generation and evaluation. Inactive data expires after 30 days; retained work keeps its dependencies. The workspace password opens the owner's account."
             )
         return page
 
@@ -1069,6 +1109,7 @@ try:
         "Results": results,
         "History": history,
         "Optimize configuration": lambda: optimization_page(api),
+        "Retrieval debugger": lambda: debugger_page(api),
     }[page]()
 except (requests.RequestException, RuntimeError) as exc:
     st.error(str(exc))

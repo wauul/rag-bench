@@ -32,15 +32,58 @@ class Store:
                     id TEXT PRIMARY KEY, kind TEXT NOT NULL, payload JSONB NOT NULL,
                     sequence BIGSERIAL NOT NULL)""")
                 db.execute("CREATE INDEX IF NOT EXISTS objects_kind ON objects(kind)")
+            from backend.guardrails import initialize
+
+            initialize(self)
+            self.initialize_identity()
             return
         with self.connect() as db:
             db.execute(
                 "CREATE TABLE IF NOT EXISTS objects (id TEXT PRIMARY KEY, kind TEXT, payload TEXT)"
             )
             db.execute("CREATE INDEX IF NOT EXISTS objects_kind ON objects(kind)")
+        from backend.guardrails import initialize
+
+        initialize(self)
+        self.initialize_identity()
+
+    def initialize_identity(self):
+        with self.connect(operator=True) as db:
+            if self.postgres:
+                db.execute(
+                    "ALTER TABLE objects ADD COLUMN IF NOT EXISTS owner_id TEXT NOT NULL DEFAULT 'owner'"
+                )
+                db.execute(
+                    "CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, token_hash TEXT UNIQUE NOT NULL, enabled BOOLEAN NOT NULL DEFAULT true, expires_at TIMESTAMPTZ NOT NULL)"
+                )
+                db.execute("ALTER TABLE objects ENABLE ROW LEVEL SECURITY")
+                db.execute("ALTER TABLE objects FORCE ROW LEVEL SECURITY")
+                if not db.execute(
+                    "SELECT 1 FROM pg_policies WHERE schemaname=current_schema() AND tablename='objects' AND policyname='owner_access'"
+                ).fetchone():
+                    db.execute(
+                        "CREATE POLICY owner_access ON objects USING (current_setting('ragbench.operator',true)='true' OR owner_id=current_setting('ragbench.owner',true) OR kind='guardrails') WITH CHECK (current_setting('ragbench.operator',true)='true' OR owner_id=current_setting('ragbench.owner',true))"
+                    )
+            else:
+                columns = {r[1] for r in db.execute("PRAGMA table_info(objects)")}
+                if "owner_id" not in columns:
+                    db.execute(
+                        "ALTER TABLE objects ADD COLUMN owner_id TEXT NOT NULL DEFAULT 'owner'"
+                    )
+                db.execute(
+                    "CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, token_hash TEXT UNIQUE NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, expires_at TEXT NOT NULL)"
+                )
 
     @contextmanager
-    def connect(self):
+    def connect(self, operator=False):
+        from backend.identity import owner
+
+        def scope(db):
+            db.execute(
+                "SELECT set_config('ragbench.owner',%s,true), set_config('ragbench.operator',%s,true)",
+                (owner.get() or "", "true" if operator or owner.get() is None else "false"),
+            )
+
         if self.postgres:
             from backend.execution_lock import execution_connection
             from backend.postgres import connect
@@ -49,9 +92,11 @@ class Store:
             if owned is not None:
                 # Use the lock-owning session: a lost lock cannot write through a new connection.
                 with owned.transaction():
+                    scope(owned)
                     yield owned
                 return
             with connect(self.database_url) as db:
+                scope(db)
                 yield db
         else:
             db = sqlite3.connect(self.path, timeout=30)
@@ -62,29 +107,73 @@ class Store:
                 db.close()
 
     def save(self, kind, payload, object_id=None):
+        from datetime import datetime, timezone
+
         from backend.execution_lock import assert_execution_lock
+        from backend.identity import owner
 
         assert_execution_lock(self)
         object_id = object_id or uuid4().hex
         payload = {**payload, "id": object_id}
-        encoded = json.dumps(payload, allow_nan=False)
-        with self.connect() as db:
+        from backend.guardrails import locked
+
+        with locked(self) as (db, _, policy):
+            existing = db.execute(
+                "SELECT owner_id,payload FROM objects WHERE id=%s"
+                if self.postgres
+                else "SELECT owner_id,payload FROM objects WHERE id=?",
+                (object_id,),
+            ).fetchone()
+            principal = owner.get()
+            if existing and principal is not None and existing[0] != principal:
+                raise KeyError(object_id)
+            principal = principal or (existing[0] if existing else payload.get("owner_id", "owner"))
+            previous = (
+                (existing[1] if self.postgres else json.loads(existing[1])) if existing else {}
+            )
+            payload.update(
+                owner_id=principal,
+                retained_at=previous.get("retained_at", datetime.now(timezone.utc).isoformat()),
+            )
+            encoded = json.dumps(payload, allow_nan=False)
+            # Count authoritative JSON, including snapshots. Updates replace their old size.
+            total = db.execute(
+                "SELECT COALESCE(SUM(octet_length(payload::text)),0) FROM objects"
+                if self.postgres
+                else "SELECT COALESCE(SUM(length(CAST(payload AS BLOB))),0) FROM objects"
+            ).fetchone()[0]
+            old = db.execute(
+                "SELECT octet_length(payload::text) FROM objects WHERE id=%s"
+                if self.postgres
+                else "SELECT length(CAST(payload AS BLOB)) FROM objects WHERE id=?",
+                (object_id,),
+            ).fetchone()
+            incoming = (
+                db.execute("SELECT octet_length(%s::jsonb::text)", (encoded,)).fetchone()[0]
+                if self.postgres
+                else len(encoded.encode())
+            )
+            if total - (old[0] if old else 0) + incoming > policy.storage_bytes:
+                raise ValueError("Workspace storage quota exhausted")
             db.execute(
-                """INSERT INTO objects(id, kind, payload) VALUES (%s, %s, %s::jsonb)
+                """INSERT INTO objects(id, kind, payload, owner_id) VALUES (%s, %s, %s::jsonb, %s)
                 ON CONFLICT(id) DO UPDATE SET kind=EXCLUDED.kind, payload=EXCLUDED.payload"""
                 if self.postgres
-                else "INSERT OR REPLACE INTO objects VALUES (?, ?, ?)",
-                (object_id, kind, encoded),
+                else "INSERT OR REPLACE INTO objects(id,kind,payload,owner_id) VALUES (?, ?, ?, ?)",
+                (object_id, kind, encoded, principal),
             )
         return payload
 
     def get(self, kind, object_id):
+        from backend.identity import owner
+
+        principal = owner.get()
         with self.connect() as db:
             row = db.execute(
-                "SELECT payload FROM objects WHERE id=%s AND kind=%s"
+                "SELECT payload FROM objects WHERE id=%s AND kind=%s AND (owner_id=%s OR %s::text IS NULL OR kind='guardrails')"
                 if self.postgres
-                else "SELECT payload FROM objects WHERE id=? AND kind=?",
-                (object_id, kind),
+                else "SELECT payload FROM objects WHERE id=? AND kind=? AND (owner_id=? OR ? IS NULL OR kind='guardrails')",
+                (object_id, kind, principal, principal),
             ).fetchone()
         if row is None:
             raise KeyError(object_id)
@@ -114,16 +203,28 @@ class Store:
             )
 
     def list(self, kind, limit=None, offset=0):
+        from backend.identity import owner
+
+        principal = owner.get()
         with self.connect() as db:
             rows = db.execute(
-                "SELECT payload FROM objects WHERE kind=%s ORDER BY sequence DESC LIMIT %s OFFSET %s"
+                "SELECT payload FROM objects WHERE kind=%s AND (owner_id=%s OR %s::text IS NULL) ORDER BY sequence DESC LIMIT %s OFFSET %s"
                 if self.postgres
-                else "SELECT payload FROM objects WHERE kind=? ORDER BY rowid DESC LIMIT ? OFFSET ?",
-                (kind, limit if self.postgres else (-1 if limit is None else limit), offset),
+                else "SELECT payload FROM objects WHERE kind=? AND (owner_id=? OR ? IS NULL) ORDER BY rowid DESC LIMIT ? OFFSET ?",
+                (
+                    kind,
+                    principal,
+                    principal,
+                    limit if self.postgres else (-1 if limit is None else limit),
+                    offset,
+                ),
             ).fetchall()
         return [row[0] if self.postgres else json.loads(row[0]) for row in rows]
 
     def run_history(self, limit=50, offset=0):
+        from backend.identity import owner
+
+        principal = owner.get()
         if self.postgres:
             fields = (
                 "status",
@@ -140,8 +241,8 @@ class Store:
             with self.connect() as db:
                 rows = db.execute(
                     "SELECT jsonb_build_object('id', id, " + projection + ") FROM objects "  # nosec B608
-                    "WHERE kind='run' ORDER BY payload->>'created_at' DESC, id DESC LIMIT %s OFFSET %s",
-                    (limit, offset),
+                    "WHERE kind='run' AND (owner_id=%s OR %s::text IS NULL) ORDER BY payload->>'created_at' DESC, id DESC LIMIT %s OFFSET %s",
+                    (principal, principal, limit, offset),
                 ).fetchall()
             return [row[0] for row in rows]
         # Project compact fields inside SQLite: polling history does not decode passages/answers.
@@ -156,9 +257,9 @@ class Store:
                 'total', json_extract(payload, '$.total'),
                 'scored', json_extract(payload, '$.scored'),
                 'configurations', json_extract(payload, '$.configurations'))
-                FROM objects WHERE kind='run'
+                FROM objects WHERE kind='run' AND (owner_id=? OR ? IS NULL)
                 ORDER BY json_extract(payload, '$.created_at') DESC, id DESC LIMIT ? OFFSET ?""",
-                (limit, offset),
+                (principal, principal, limit, offset),
             ).fetchall()
         return [json.loads(row[0]) for row in rows]
 

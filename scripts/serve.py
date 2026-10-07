@@ -22,6 +22,7 @@ def main():
             str(port),
             "--workers",
             "1",
+            "--no-proxy-headers",
             "--timeout-graceful-shutdown",
             "150",
             "--no-access-log",

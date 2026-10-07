@@ -1,7 +1,10 @@
 import csv
 import io
 import json
+import subprocess
+import sys
 from pathlib import Path
+from threading import BoundedSemaphore
 from typing import TypedDict
 
 from pypdf import PdfReader
@@ -10,6 +13,32 @@ from backend.models import TestSet
 
 MAX_BYTES = 5 * 1024 * 1024
 MAX_TEXT = 150_000
+_parsers = BoundedSemaphore(2)
+
+
+def extract_bounded(name, data):
+    if len(data) > MAX_BYTES:
+        raise ValueError("Each document must be at most 5 MB")
+    if Path(name).suffix.lower() != ".pdf":
+        return extract_document(name, data)
+    if not _parsers.acquire(blocking=False):
+        raise ValueError("Document parser busy; retry later")
+    try:
+        try:
+            result = subprocess.run(
+                [sys.executable, "-m", "backend.ingestion_worker", name],
+                input=data,
+                capture_output=True,
+                timeout=25,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            raise ValueError("PDF extraction timed out") from None
+        if result.returncode != 0:
+            raise ValueError("PDF extraction failed or exceeded resource limits")
+        return json.loads(result.stdout)
+    finally:
+        _parsers.release()
 
 
 class DocumentPage(TypedDict):

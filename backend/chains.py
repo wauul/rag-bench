@@ -73,9 +73,36 @@ def parse_answer(response):
     return response.content
 
 
-def answer_chain(llm):
+def prompt_messages(question, contexts):
+    value = resolved_answer_prompt().invoke(
+        generation_inputs({"question": question, "documents": to_documents(contexts)})
+    )
+    return [{"role": m.type, "content": m.content} for m in value.to_messages()]
+
+
+def answer_chain(llm, on_prompt=None):
     # Production uses ChatGroq directly; a callable adapter supports deterministic test doubles.
     from langchain_core.runnables import Runnable
 
     model = llm if isinstance(llm, Runnable) else RunnableLambda(llm.invoke)
-    return RunnableLambda(generation_inputs) | ANSWER_PROMPT | model | RunnableLambda(parse_answer)
+
+    def capture(value):
+        if on_prompt:
+            on_prompt([{"role": m.type, "content": m.content} for m in value.to_messages()])
+        return value
+
+    return (
+        RunnableLambda(generation_inputs)
+        | resolved_answer_prompt()
+        | RunnableLambda(capture)
+        | model
+        | RunnableLambda(parse_answer)
+    )
+
+
+def resolved_answer_prompt():
+    from backend.prompts import generation
+
+    return ChatPromptTemplate.from_messages(
+        [("system", generation()), ("human", "PASSAGES:\n{context}\n\nQUESTION: {question}")]
+    )

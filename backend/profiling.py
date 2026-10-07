@@ -180,9 +180,16 @@ class RunProfiler:
         return getattr(self, "status", "failed")
 
 
+@contextmanager
 def measure(stage, **labels):
+    from backend.observability import stage as observe_stage
+
     profiler = _current.get()
-    return profiler.phase(stage, **labels) if profiler else nullcontext()
+    with (
+        observe_stage(stage, **labels),
+        profiler.phase(stage, **labels) if profiler else nullcontext(),
+    ):
+        yield
 
 
 def begin_request():
@@ -259,17 +266,24 @@ class ProfiledClient(httpx.Client):
     """Wrap send so Groq SDK retries and transport failures are counted individually."""
 
     def send(self, request, **kwargs):
+        from backend.guardrails import reserve
+
+        reserve(request)
         from backend.optimization_budget import current_budget
 
         budget = current_budget()
         if budget:
             budget.reserve()
+        from backend.observability import begin_provider_attempt, provider_response
+
+        observation_handle = begin_provider_attempt()
         handle = begin_request()
         try:
             response = super().send(request, **kwargs)
         except BaseException:
             finish_request(handle)
             raise
+        provider_response(response, observation_handle)
         finish_request(handle, response)
         if budget:
             budget.finish(response)
@@ -278,17 +292,24 @@ class ProfiledClient(httpx.Client):
 
 class ProfiledAsyncClient(httpx.AsyncClient):
     async def send(self, request, **kwargs):
+        from backend.guardrails import reserve
+
+        reserve(request)
         from backend.optimization_budget import current_budget
 
         budget = current_budget()
         if budget:
             budget.reserve()
+        from backend.observability import begin_provider_attempt, provider_response
+
+        observation_handle = begin_provider_attempt()
         handle = begin_request()
         try:
             response = await super().send(request, **kwargs)
         except BaseException:
             finish_request(handle)
             raise
+        provider_response(response, observation_handle)
         finish_request(handle, response)
         if budget:
             budget.finish(response)

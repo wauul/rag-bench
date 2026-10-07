@@ -371,7 +371,9 @@ def test_real_langchain_groq_adapter_with_controlled_http(fixture, monkeypatch, 
 
     with httpx.Client(transport=httpx.MockTransport(transport)) as client:
         monkeypatch.setattr(
-            langchain_groq, "ChatGroq", lambda **kwargs: real_model(**kwargs, http_client=client)
+            langchain_groq,
+            "ChatGroq",
+            lambda **kwargs: real_model(**{**kwargs, "http_client": client}),
         )
         result = execute(store, record["id"])
     assert len(requests) == (2 if failure else 1)

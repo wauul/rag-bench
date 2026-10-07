@@ -51,6 +51,8 @@ def progress(run):
 
 
 def validate_retry(run):
+    if run.get("attempt", 1) >= 4:
+        raise ValueError("Retry budget exhausted; create a new run")
     if run["status"] not in RETRY_STATES:
         raise ValueError("Retry requires a partial, failed or cancelled run")
     expected = load_settings().provenance()
