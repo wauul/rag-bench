@@ -35,9 +35,8 @@ def apply_styles():
 
 
 def header(eyebrow, title, description):
-    st.html(f'<p class="eyebrow">{escape(eyebrow)}</p>')
     st.title(title)
-    st.write(description)
+    st.caption(description)
 
 
 def status_badge(status):
@@ -46,7 +45,8 @@ def status_badge(status):
 
 def step_status(label, detail, ready):
     state = "ready" if ready else "pending"
-    icon = "✓" if ready else "○"
+    path = '<path d="m4 8 3 3 5-6"/>' if ready else '<circle cx="8" cy="8" r="4"/>'
+    icon = f'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">{path}</svg>'
     st.html(
         f'<div class="step-status {state}" role="group" aria-label="{escape(label)}: {state}"><span class="step-icon" aria-hidden="true">{icon}</span>'
         f"<div><strong>{escape(label)}</strong><span>{escape(detail)}</span></div></div>"

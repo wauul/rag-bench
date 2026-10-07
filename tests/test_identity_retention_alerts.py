@@ -47,6 +47,8 @@ def test_api_user_cannot_read_cancel_delete_other_run(tmp_path, monkeypatch):
         suffix = "/cancel" if method == "POST" else ""
         assert client.request(method, path + run["id"] + suffix, headers=headers).status_code == 404
     assert client.get("/api/runs", headers=headers).status_code == 200
+    assert client.get("/api/runs?include_summary=true", headers=headers).json()["runs"] == []
+    assert client.get("/api/runs?include_summary=true").status_code == 401
 
 
 def test_expired_and_revoked_keys_fail_closed(tmp_path, monkeypatch):

@@ -20,10 +20,19 @@ from dotenv import load_dotenv
 
 from backend.profiling_report import row_profile
 from dashboard.access import admit_login
+from dashboard.charts import (
+    chart,
+    latency_chart,
+    latency_frame,
+    question_heatmap,
+    theme,
+    tradeoff_chart,
+)
 from dashboard.debugger import debugger_page
 from dashboard.investigation import investigation_panel
 from dashboard.observability import trace_link
 from dashboard.optimization import optimization_page
+from dashboard.overview import overview_page
 from dashboard.performance import performance_metrics, performance_panel
 from dashboard.ui import (
     MODEL_LABELS,
@@ -39,6 +48,7 @@ from dashboard.ui import (
 
 load_dotenv()
 st.set_page_config(page_title="RAG Bench", page_icon="◈", layout="wide")
+apply_styles()
 
 
 def setting(name, default=""):
@@ -64,9 +74,15 @@ if (
     if time.time() - st.session_state.get("authenticated_at", 0) > 3600:
         st.session_state.authenticated = False
     if not st.session_state.get("authenticated", False):
-        with st.form("login"):
-            supplied = st.text_input("Password or personal access key", type="password")
-            submitted = st.form_submit_button("Sign in")
+        with st.container(key="login_layout"):
+            st.title("RAG Bench")
+            st.caption("Compare retrieval. Understand the evidence.")
+            with st.form("login"):
+                supplied = st.text_input("Password or personal access key", type="password")
+                submitted = st.form_submit_button("Sign in", type="primary", width="stretch")
+            st.caption(
+                "A private workspace. Use your personal access key or the workspace password."
+            )
         if submitted and not admit_login():
             st.error("Too many sign-in attempts. Try again in one minute.")
             st.stop()
@@ -426,7 +442,7 @@ def setup():
         st.warning(
             "Backend connection pending. Evaluations become available once the API is configured."
         )
-    with st.container(key="sample_card"):
+    with st.expander("Try the sample benchmark"):
         left, right = st.columns([3, 1], vertical_alignment="center")
         with left:
             st.html(
@@ -449,8 +465,12 @@ def setup():
             help="PDFs need extractable text. Use UTF-8 for TXT and Markdown.",
         )
         st.caption(
-            "Your access key isolates your uploaded data and runs. Selected passages, questions, references and answers are sent to Groq. Inactive data expires after 30 days unless referenced by retained work. Export results you need to keep; use non-sensitive test data."
+            "Selected passages and reference answers are sent to Groq. Use non-sensitive test data."
         )
+        with st.expander("Privacy and retention"):
+            st.caption(
+                "Your access key isolates your uploaded data and runs. Selected passages, questions, references and answers are sent to Groq. Inactive data expires after 30 days unless referenced by retained work. Export results you need to keep; use non-sensitive test data."
+            )
         if st.button("Save documents", disabled=not files, width="stretch"):
             with st.spinner("Saving documents…"):
                 result = api(
@@ -738,16 +758,7 @@ def comparison_chart(frame, kind):
         st.caption(
             "Radar shows 0–1. Use Bars or the score table for any negative relevancy scores."
         )
-    fig.update_layout(
-        height=420,
-        font={"family": "sans-serif", "color": "#626a83", "size": 12},
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        legend_title_text="",
-        legend={"orientation": "h", "y": 1.16, "x": 0},
-        margin={"t": 55, "l": 10, "r": 10, "b": 10},
-    )
-    return fig
+    return theme(fig, 380)
 
 
 def answer_explorer(run):
@@ -858,7 +869,7 @@ def answer_explorer(run):
 def results():
     header(
         "WORKSPACE / RESULTS",
-        "See what worked.",
+        "Benchmark results",
         "Compare the scores, then inspect the answers and passages behind them.",
     )
     with st.expander("Open a run by ID", expanded=not st.session_state.get("run_id")):
@@ -898,7 +909,9 @@ def results():
         st.warning(
             "Results are incomplete. Averages exclude missing scores; no overall winner is declared."
         )
-    overview, answers, performance = st.tabs(["Score overview", "Inspect answers", "Performance"])
+    overview, questions, efficiency, answers, performance = st.tabs(
+        ["Score overview", "Question scores", "Quality & speed", "Inspect answers", "Performance"]
+    )
     with overview:
         for start in range(0, len(summaries), 2):
             columns = st.columns(2)
@@ -914,11 +927,11 @@ def results():
                 "Comparison view", ["Bars", "Radar"], horizontal=True, label_visibility="collapsed"
             )
             frame = pd.DataFrame(summaries, columns=["name", *METRICS]).set_index("name")
-            st.plotly_chart(comparison_chart(frame, chart_kind), width="stretch")
+            chart(comparison_chart(frame, chart_kind))
             st.caption(
                 "Higher is generally better. Judge scores are estimates; review the underlying evidence before choosing a configuration."
             )
-        with st.expander("Score table and valid counts", expanded=True):
+        with st.expander("Score table and valid counts"):
             readable = frame.rename(columns=LABELS).rename_axis("Configuration")
             st.dataframe(
                 readable.style.format("{:.3f}", na_rep="—").highlight_max(axis=0, color="#eeecff"),
@@ -944,6 +957,31 @@ def results():
             )
             st.json(run["provenance"])
             st.json(run["configurations"])
+    with questions:
+        st.subheader("Find the questions that change the result")
+        selected_metric = st.selectbox("Question metric", METRICS, format_func=LABELS.get)
+        chart(question_heatmap(run, selected_metric), key="question_heatmap")
+        st.caption(
+            "Each cell is one saved judge score. Blank cells are missing, never zero. Open Inspect answers for the question and its evidence."
+        )
+    with efficiency:
+        st.subheader("Compare quality and evaluation time")
+        tradeoff = tradeoff_chart(run)
+        if tradeoff.data:
+            chart(tradeoff, key="benchmark_tradeoff")
+            st.caption(
+                "Completed configurations only, with all answer processing times recorded. Quality is the equal-weight mean of four judge metrics. Time includes generation, scoring and recorded retries; excludes indexing and retrieval."
+            )
+        else:
+            st.info(
+                "A quality–speed comparison needs complete scores and recorded latency for every answer."
+            )
+        if not latency_frame(run).empty:
+            st.subheader("Answer processing time")
+            chart(latency_chart(run), key="benchmark_latency")
+            st.caption(
+                "Every dot is a saved answer. The box shows the middle half; with few questions, inspect individual dots. Missing and failed answers are excluded."
+            )
     with answers:
         answer_explorer(run)
     with performance:
@@ -1055,13 +1093,14 @@ def history():
 def sidebar():
     with st.sidebar:
         st.html(
-            '<div class="brand"><span class="brand-mark" aria-hidden="true">◈</span><div><strong>RAG Bench</strong><small>Retrieval, measured.</small></div></div>'
+            '<div class="brand"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3 21 12 12 21 3 12Z M12 8 16 12 12 16 8 12Z"/></svg></span><div><strong>RAG Bench</strong><small>Retrieval, measured.</small></div></div>'
         )
         labels = {
-            "Upload / Setup": "01  Setup",
-            "Run": "02  Evaluation",
-            "Results": "03  Results",
-            "History": "04  History",
+            "Overview": "Overview",
+            "Upload / Setup": "Build a benchmark",
+            "Run": "Evaluation",
+            "Results": "Results",
+            "History": "Benchmark library",
             "Optimize configuration": "Optimize configuration",
             "Retrieval debugger": "Retrieval debugger",
         }
@@ -1071,10 +1110,11 @@ def sidebar():
             format_func=labels.get,
             key="page",
             label_visibility="collapsed",
+            width="stretch",
         )
         st.divider()
-        st.caption("YOUR WORKSPACE")
-        st.write(f"{len(st.session_state.get('configs', []))} configurations selected")
+        st.caption("PRIVATE WORKSPACE")
+        st.caption(f"{len(st.session_state.get('configs', []))} configurations in your draft")
         if st.session_state.get("run_id"):
             st.button(
                 "Open latest results",
@@ -1089,6 +1129,11 @@ def sidebar():
             st.caption(
                 "Personal access keys isolate each user's runs. Uploaded data is sent to Groq for generation and evaluation. Inactive data expires after 30 days; retained work keeps its dependencies. The workspace password opens the owner's account."
             )
+        if st.session_state.get("authenticated") and st.button(
+            "Sign out", icon=":material/logout:", width="stretch"
+        ):
+            st.session_state.clear()
+            st.rerun()
         return page
 
 
@@ -1096,7 +1141,6 @@ if destination := st.session_state.pop("next_page", None):
     navigate(destination)
 if experiment := st.session_state.pop("optimization_pending", None):
     st.session_state.optimization_choice = experiment
-apply_styles()
 page = sidebar()
 if st.session_state.get("ui_error"):
     st.error(st.session_state.pop("ui_error"))
@@ -1104,6 +1148,7 @@ if st.session_state.get("ui_notice"):
     st.success(st.session_state.pop("ui_notice"))
 try:
     {
+        "Overview": lambda: overview_page(api, navigate, open_saved_run, bool(BASE)),
         "Upload / Setup": setup,
         "Run": run_page,
         "Results": results,

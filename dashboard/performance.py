@@ -6,6 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from backend.profiling_report import profile_csv_rows, spans, summarize_profile
+from dashboard.charts import chart, phase_chart
 
 STAGES = {
     "provider_check": "Groq readiness check",
@@ -66,6 +67,13 @@ def performance_panel(run):
         )
         return
     summary = performance_metrics(profile)
+    names = {c["id"]: c["name"] for c in run["configurations"]}
+    if summary.get("configurations"):
+        st.subheader("Where the time goes")
+        chart(phase_chart(summary, names, STAGES), key="performance_phases")
+        st.caption(
+            "Cumulative recorded phase time across attempts. Phase durations may overlap; this is not wall-clock run duration. Unrecorded phases are omitted."
+        )
     usage = summary["groq"]
     st.caption(
         "Includes every recorded attempt and retry. Timings are elapsed wall time; RAM is sampled every 100 ms and at phase boundaries. Values update at saved checkpoints."

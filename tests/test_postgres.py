@@ -127,12 +127,21 @@ def test_crud_history_and_local_default(pg_url, tmp_path, monkeypatch):
             "created_at": "2026-10-07",
             "configurations": [],
             "rows": [{"answer": "large"}],
+            "summary": [{"name": "Saved comparison", "overall": 0.8}],
+            "profiling": {
+                "summary": {"groq": {"http_requests": 7}},
+                "attempts": [{"secret": "private"}],
+            },
         },
     )
     fresh.save("run", {**run, "status": "failed"}, run["id"])
     assert len(fresh.list("run")) == 1
     history = fresh.run_history()
     assert history[0]["status"] == "failed" and "rows" not in history[0]
+    overview = fresh.run_history(include_summary=True)[0]
+    assert overview["summary"] == run["summary"]
+    assert overview["profile_summary"] == run["profiling"]["summary"]
+    assert "profiling" not in overview and "rows" not in overview
     assert fresh.list("run", limit=1, offset=1) == []
     with pytest.raises(KeyError):
         fresh.get("configuration", saved["id"])

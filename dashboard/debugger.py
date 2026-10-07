@@ -3,8 +3,10 @@
 import json
 import re
 
+import plotly.graph_objects as go
 import streamlit as st
 
+from dashboard.charts import COLORS, chart, finite, theme
 from dashboard.observability import trace_link
 from dashboard.ui import header
 
@@ -33,6 +35,11 @@ def show_trace(record):
             st.caption(
                 "Cosine distance: lower is better. Reranker relevance score: higher is better. Scores across models are not calibrated or directly comparable."
             )
+            left, right = st.columns(2)
+            with left:
+                candidate_score_chart(record["candidates"], "distance", "Retrieval distance", False)
+            with right:
+                candidate_score_chart(ordered, "rerank_score", "Reranker relevance", True)
             for i, c in enumerate(record["candidates"], 1):
                 cid = c.get("chunk_id")
                 st.write(
@@ -91,6 +98,28 @@ def show_trace(record):
                 )
             }
         )
+
+
+def candidate_score_chart(candidates, field, title, reranked):
+    measured = [(i, c[field]) for i, c in enumerate(candidates, 1) if finite(c.get(field))]
+    st.subheader(title)
+    if not measured:
+        st.caption("No recorded measurements for this stage.")
+        return
+    figure = go.Figure(
+        go.Bar(
+            x=[value for _, value in measured],
+            y=[f"#{i}" for i, _ in measured],
+            orientation="h",
+            marker_color=COLORS[1 if reranked else 0],
+            hovertemplate="Candidate %{y}<br>Score: %{x:.3f}<extra></extra>",
+        )
+    )
+    figure.update_yaxes(
+        autorange="reversed", title="Reranked order" if reranked else "Retrieved order"
+    )
+    figure.update_xaxes(title="Higher is better" if reranked else "Lower is better")
+    chart(theme(figure, 280), key=f"debugger_{field}")
 
 
 def debugger_page(api):
