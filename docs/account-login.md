@@ -7,8 +7,12 @@ Resend delivers verification and password-reset email. Review both providers'
 retention policies separately from Ragbench's experiment retention.
 
 The Streamlit server creates a ten-minute sign-in flow with a SHA-256 challenge.
-A random, ten-minute Secure/SameSite browser nonce binds the return to that same
-browser. A separate top-level sign-in tab handles Neon cookies and OAuth.
+A random, ten-minute browser nonce binds the return to that same browser. A native
+Streamlit component stores it under that flow in browser site storage, enforces
+expiry, and passes it back through the component protocol. It accepts render
+messages only from its exact parent origin. This avoids depending on Streamlit
+Cloud forwarding custom cookies. API sessions are never stored in the browser.
+A separate top-level sign-in tab handles Neon cookies and OAuth.
 The welcome screen offers GitHub and email directly, without a preliminary
 "continue" step. GitHub creates an account on first use. Email signup and reset
 remain available on the email screen. The OAuth return exchanges Neon's
@@ -39,7 +43,20 @@ Never share the owner password or owner API token with regular users.
 
 Backend settings: `NEON_AUTH_URL`, `AUTH_GATEWAY_URL`, `DASHBOARD_URL` (the exact
 HTTPS Streamlit app origin), and pinned
-`NEON_AUTH_ISSUER` / `NEON_AUTH_AUDIENCE` where needed. Dashboard setting:
+`NEON_AUTH_ISSUER` / `NEON_AUTH_AUDIENCE` where needed.
+For managed Neon, pin both to the tenant HTTPS origin (without `/neondb/auth`)
+and retain the full API path in `NEON_AUTH_URL`. See
+[Neon's verification example](https://github.com/neondatabase/website/blob/main/content/docs/compute/functions/authentication.md).
+The runtime database role also needs only the following account-status access;
+run this once with the database owner, substituting the actual runtime role:
+
+```sql
+GRANT USAGE ON SCHEMA neon_auth TO ragbench_app;
+GRANT SELECT (id, "emailVerified", banned) ON neon_auth."user" TO ragbench_app;
+```
+
+It does not need access to email addresses, password credentials, or OAuth tokens.
+Dashboard setting:
 `ACCOUNT_LOGIN_ENABLED=true`. Enable verified email, custom SMTP and the GitHub
 OAuth provider in Neon; use only the exact gateway origin in trusted domains and
 disable localhost. Configure GitHub's callback as

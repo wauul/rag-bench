@@ -209,14 +209,22 @@ def install(app, get_store, auth):
         }
 
     @app.get("/auth/login")
-    def login(flow: str, request: Request):
+    def login(request: Request, flow: str = ""):
+        def restart_page():
+            response = login_page()
+            response.status_code = 400
+            return response
+
         if not re.fullmatch(r"[a-zA-Z0-9_-]{32,80}", flow):
-            raise HTTPException(400, "Start sign-in from the dashboard")
+            return restart_page()
         configuration()
         store = get_store()
         cookie = request.cookies.get("rb_login", "")
         with store.connect(operator=True) as db:
-            row = live_flow(store, db, flow)
+            try:
+                row = live_flow(store, db, flow)
+            except HTTPException:
+                return restart_page()
             if not row[1]:
                 cookie = secrets.token_urlsafe(32)
                 db.execute(
@@ -227,7 +235,7 @@ def install(app, get_store, auth):
                     (digest(cookie), flow),
                 )
             elif not cookie or not secrets.compare_digest(row[1], digest(cookie)):
-                raise HTTPException(400, "Return to the browser where you started sign-in")
+                return restart_page()
         response = login_page(flow)
         response.set_cookie(
             "rb_login",

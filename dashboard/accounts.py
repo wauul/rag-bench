@@ -1,14 +1,19 @@
 """Account sign-in UI. Provider credentials stay in the separate sign-in window."""
 
 import hashlib
-import json
 import secrets
 import time
+from pathlib import Path
 
 import requests
 import streamlit as st
+from streamlit.components.v1 import declare_component
 
 from dashboard.access import admit_login
+
+browser_binding = declare_component(
+    "account_browser_binding", path=str(Path(__file__).with_name("account_binding"))
+)
 
 
 def managed_login(base, operator_token):
@@ -17,7 +22,15 @@ def managed_login(base, operator_token):
     ticket = st.query_params.get("rb_ticket")
     flow = st.query_params.get("rb_flow")
     if ticket or flow:
-        verifier = st.context.cookies.get("rb_auth_verifier", "")
+        if not ticket or not flow:
+            st.query_params.clear()
+            st.error("Start sign-in from this dashboard in the same browser.")
+            return
+        binding = browser_binding(mode="redeem", flow=flow, key="return_" + str(flow), default=None)
+        if binding is None:
+            st.caption("Signing you in...")
+            st.stop()
+        verifier = binding.get("verifier", "")
         st.query_params.clear()
         if not verifier or not ticket or not flow:
             st.error("Start sign-in from this dashboard in the same browser.")
@@ -70,15 +83,21 @@ def managed_login(base, operator_token):
             if st.button("Try again", width="stretch"):
                 st.rerun()
     if pending := st.session_state.get("account_flow"):
-        # This short-lived nonce binds the callback to the initiating browser.
-        # It is not an API credential; all actual sessions stay server-side.
-        cookie = (
-            "rb_auth_verifier=" + pending["verifier"] + ";Max-Age=600;Path=/;Secure;SameSite=Lax"
+        # The native component survives Streamlit Cloud's cookie forwarding.
+        # It returns only a browser-held nonce, never an API/provider credential.
+        binding = browser_binding(
+            mode="prepare",
+            flow=pending["flow"],
+            verifier=pending["verifier"],
+            key="prepare_" + pending["flow"],
+            default=None,
         )
-        st.html(
-            "<script>document.cookie=" + json.dumps(cookie) + ";</script>",
-            unsafe_allow_javascript=True,
-        )
+        if binding is None:
+            st.caption("Preparing sign-in...")
+            return
+        if not binding.get("ready"):
+            st.error("Allow site storage in your browser, then reload to sign in.")
+            return
         st.link_button(
             "Continue with GitHub",
             pending["url"] + "&method=github",

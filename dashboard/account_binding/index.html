@@ -1,0 +1,31 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Account return</title></head><body>
+<script>
+// Only a short-lived handoff nonce is stored here. API sessions stay server-side.
+const parentOrigin=location.origin, prefix='rb_auth_flow_';
+let lastValue='';
+function send(type,fields={}){window.parent.postMessage({isStreamlitMessage:true,type,...fields},parentOrigin)}
+window.addEventListener('message',event=>{
+  if(event.source!==window.parent||event.origin!==parentOrigin||event.data?.type!=='streamlit:render')return;
+  const {mode,flow,verifier}=event.data.args||{};
+  if(!/^[a-zA-Z0-9_-]{32,80}$/.test(flow||''))return;
+  let value={ready:false};
+  try{
+    for(const key of Object.keys(localStorage)){
+      if(key.startsWith(prefix)){
+        try{if(JSON.parse(localStorage.getItem(key)).expires<=Date.now())localStorage.removeItem(key)}catch{localStorage.removeItem(key)}
+      }
+    }
+    if(mode==='prepare'&&/^[a-zA-Z0-9_-]{32,100}$/.test(verifier||'')){
+      localStorage.setItem(prefix+flow,JSON.stringify({verifier,expires:Date.now()+600000}));
+      value={ready:true};
+    }else if(mode==='redeem'){
+      const record=JSON.parse(localStorage.getItem(prefix+flow)||'null');
+      if(record&&record.expires>Date.now()&&/^[a-zA-Z0-9_-]{32,100}$/.test(record.verifier))value={ready:true,verifier:record.verifier};
+    }
+  }catch{}
+  const encoded=JSON.stringify(value);
+  if(encoded!==lastValue){lastValue=encoded;send('streamlit:setComponentValue',{value,dataType:'json'})}
+});
+send('streamlit:componentReady',{apiVersion:1});
+send('streamlit:setFrameHeight',{height:0});
+</script></body></html>

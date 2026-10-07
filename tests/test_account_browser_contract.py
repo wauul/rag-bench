@@ -88,3 +88,47 @@ def test_direct_github_entry_only_accepts_pinned_destinations(scenario, allowed)
         )
     else:
         assert result["notice"] == "Invalid sign-in destination"
+
+
+@pytest.mark.parametrize(
+    "scenario", ["prepare", "same_browser", "forwarded", "expired", "foreign_origin"]
+)
+def test_native_return_binding_requires_same_browser_and_does_not_rerun_in_a_loop(scenario):
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node is required for the browser contract check")
+    page = Path("dashboard/account_binding/index.html").read_text(encoding="utf-8")
+    script = re.search(r"<script>(.*?)</script>", page, re.S).group(1)
+    source = (
+        "const SCRIPT="
+        + json.dumps(script)
+        + ",SCENARIO="
+        + json.dumps(scenario)
+        + ";"
+        + r"""
+const vm=require('node:vm'), messages=[], store={};let listener;
+Object.defineProperties(store,{
+ getItem:{value:key=>store[key]||null},setItem:{value:(key,value)=>store[key]=value},
+ removeItem:{value:key=>delete store[key]}
+});
+const flow='f'.repeat(32),verifier='v'.repeat(32),parent={postMessage:value=>messages.push(value)};
+if(SCENARIO==='same_browser'||SCENARIO==='expired')store['rb_auth_flow_'+flow]=JSON.stringify({verifier,expires:SCENARIO==='expired'?0:700000});
+const context={location:{origin:'https://ragbench.streamlit.app'},localStorage:store,
+ Date:{now:()=>100000},window:{parent,addEventListener:(_,fn)=>listener=fn}};
+vm.createContext(context);vm.runInContext(SCRIPT,context);
+const event={source:parent,origin:SCENARIO==='foreign_origin'?'https://attacker.example':'https://ragbench.streamlit.app',
+ data:{type:'streamlit:render',args:{mode:SCENARIO==='prepare'?'prepare':'redeem',flow,verifier}}};
+listener(event);listener(event);
+console.log(JSON.stringify(messages.filter(m=>m.type==='streamlit:setComponentValue').map(m=>m.value)));
+"""
+    )
+    result = subprocess.run([node, "-e", source], capture_output=True, text=True, check=True)
+    values = json.loads(result.stdout)
+    if scenario == "foreign_origin":
+        assert values == []
+    elif scenario == "same_browser":
+        assert values == [{"ready": True, "verifier": "v" * 32}]
+    elif scenario == "prepare":
+        assert values == [{"ready": True}]
+    else:
+        assert values == [{"ready": False}]

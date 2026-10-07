@@ -64,7 +64,11 @@ def test_flow_requires_authenticated_start_and_private_verifier(account_client):
     assert "destination.origin===pinned.origin" in response.text
     assert "destination.pathname===pinned.pathname+'/sign-in/social/init'" in response.text
     other = TestClient(client.app)
-    assert other.get("/auth/login", params={"flow": flow}).status_code == 400
+    restart = other.get("/auth/login", params={"flow": flow})
+    assert restart.status_code == 400
+    assert restart.headers["content-type"].startswith("text/html")
+    assert "Back to Ragbench" in restart.text
+    assert "set-cookie" not in restart.headers
     with store.connect(operator=True) as db:
         db.execute("UPDATE account_flows SET expires_at=0")
     assert (
