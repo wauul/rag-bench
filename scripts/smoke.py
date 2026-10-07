@@ -2,6 +2,7 @@
 
 import argparse
 import os
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 
@@ -21,8 +22,27 @@ def smoke(api: str, dashboard: str, revision: str) -> None:
         response = client.get(api + "/api/runs?limit=1", headers=headers)
         response.raise_for_status()
         assert isinstance(response.json()["runs"], list)
-        client.get(dashboard + "/_stcore/health").raise_for_status()
-    print("Authenticated readiness, revision, API history and dashboard health passed")
+        access = os.getenv("DASHBOARD_ACCESS", "public")
+        if access == "streamlit-private":
+            for path in ("/", "/_stcore/health"):
+                response = client.get(dashboard + path)
+                destination = urlparse(response.headers.get("location", ""))
+                assert response.status_code == 303, "Private dashboard is not access guarded"
+                assert (
+                    destination.scheme == "https"
+                    and destination.hostname == "share.streamlit.io"
+                    and destination.path == "/-/auth/app"
+                    and parse_qs(destination.query).get("redirect_uri") == [dashboard + path]
+                ), "Unexpected dashboard authentication destination"
+        else:
+            assert access == "public", "Unknown dashboard access mode"
+            client.get(dashboard + "/_stcore/health").raise_for_status()
+    print("Authenticated API readiness, revision and history passed")
+    print(
+        "Private dashboard gateway passed; build/health requires recorded owner UI verification"
+        if access == "streamlit-private"
+        else "Dashboard health passed"
+    )
 
 
 def main() -> None:

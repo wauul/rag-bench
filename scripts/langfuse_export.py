@@ -21,10 +21,11 @@ def export(store, experiment_id, max_items=128):
     runs = [(trial, store.get("run", trial["run_id"])) for trial in record["trials"]]
     if sum(len(run["questions"]) for _, run in runs) > max_items:
         raise ValueError("Export exceeds the explicit item ceiling")
-    api = get_client().api
+    client = get_client()
+    api = client.api
     options = {"timeout_in_seconds": 2, "max_retries": 0}
     dataset = "ragbench-metadata-" + record["plan"]["dataset_fingerprint"]
-    api.datasets.create(
+    created_dataset = api.datasets.create(
         name=dataset, metadata={"kind": "fingerprint-slots-no-content"}, request_options=options
     )
     for trial, run in runs:
@@ -43,19 +44,46 @@ def export(store, experiment_id, max_items=128):
                 ),
                 request_options=options,
             )
-            api.dataset_run_items.create(
-                run_name="optimization-" + record["id"],
-                dataset_item_id=item_id,
-                trace_id=identity("benchmark", run["id"]),
-                metadata=metadata(
-                    {
-                        "optimization_id": record["id"],
-                        "split": trial["split"],
-                        "status": run["status"],
-                    }
-                ),
-                request_options=options,
+            labels = metadata(
+                {
+                    "optimization_id": record["id"],
+                    "split": trial["split"],
+                    "status": run["status"],
+                    "stage": "metadata_export",
+                    "reused": 1,
+                    "configuration_id": trial["configuration_id"],
+                    "question_index": index,
+                }
             )
+            trace_id = identity("benchmark", run["id"])
+            span = client.start_observation(
+                name="saved_experiment_export",
+                trace_context={"trace_id": trace_id},
+                metadata=labels,
+            )
+            try:
+                item = api.dataset_run_items.create(
+                    run_name="optimization-" + record["id"],
+                    dataset_item_id=item_id,
+                    trace_id=trace_id,
+                    observation_id=span.id,
+                    metadata=labels,
+                    request_options=options,
+                )
+                # SDK 4.17's native experiment view indexes these OTLP association
+                # attributes. No runner or provider is invoked. This export span's
+                # duration is export time, never a benchmark latency measurement.
+                span._otel_span.set_attributes(
+                    {
+                        "langfuse.experiment.id": item.dataset_run_id,
+                        "langfuse.experiment.name": "optimization-" + record["id"],
+                        "langfuse.experiment.dataset.id": created_dataset.id,
+                        "langfuse.experiment.item.id": item_id,
+                        "langfuse.experiment.item.root_observation_id": span.id,
+                    }
+                )
+            finally:
+                span.end()
     return {"experiment_id": record["id"], "items": sum(len(run["questions"]) for _, run in runs)}
 
 

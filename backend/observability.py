@@ -29,6 +29,13 @@ _provider_counter: ContextVar[dict[str, int] | None] = ContextVar(
 )
 PROJECT = "cmuy5n8jc000mad0kjp3qkz0g"
 HOSTS = {"https://cloud.langfuse.com", "https://us.cloud.langfuse.com"}
+EXPERIMENT_ATTRIBUTES = {
+    "langfuse.experiment.id",
+    "langfuse.experiment.name",
+    "langfuse.experiment.dataset.id",
+    "langfuse.experiment.item.id",
+    "langfuse.experiment.item.root_observation_id",
+}
 LABELS = {
     "workflow",
     "record_id",
@@ -148,6 +155,11 @@ def get_client():
                                                     }
                                                 )
                                             )
+                                        )
+                                        or (
+                                            os.getenv("RAGBENCH_LANGFUSE_EXPERIMENTS") == "metadata"
+                                            and a.key in EXPERIMENT_ATTRIBUTES
+                                            and bool(metadata({"record_id": a.value.string_value}))
                                         )
                                     ]
                                     del span.attributes[:]

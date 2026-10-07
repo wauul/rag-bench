@@ -35,6 +35,7 @@ def test_sdk_payload_is_metadata_only_and_correlated(enabled, monkeypatch, tmp_p
     from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
 
     payloads = []
+    monkeypatch.setenv("RAGBENCH_LANGFUSE_EXPERIMENTS", "metadata")
     real_client = httpx.Client
 
     def transport(request):
@@ -61,6 +62,18 @@ def test_sdk_payload_is_metadata_only_and_correlated(enabled, monkeypatch, tmp_p
         obs.provider_response(
             httpx.Response(200, json={"usage": {"total_tokens": 12}, "answer": "PRIVATE ANSWER"})
         )
+        association = obs.get_client().start_observation(
+            name="saved_experiment_export",
+            trace_context={"trace_id": obs.identity("benchmark", identity)},
+        )
+        association._otel_span.set_attributes(
+            {
+                "langfuse.experiment.id": "synthetic-experiment",
+                "langfuse.experiment.item.expected_output": "PRIVATE EXPECTED OUTPUT",
+                "langfuse.experiment.metadata.unapproved": "PRIVATE EXPERIMENT CONTENT",
+            }
+        )
+        association.end()
         return store.get("run", identity)
 
     execute(store, run["id"])
@@ -72,6 +85,8 @@ def test_sdk_payload_is_metadata_only_and_correlated(enabled, monkeypatch, tmp_p
         b"PRIVATE QUESTION",
         b"PRIVATE PROMPT",
         b"PRIVATE ANSWER",
+        b"PRIVATE EXPECTED OUTPUT",
+        b"PRIVATE EXPERIMENT CONTENT",
         b"sk-sensitive-fixture-secret",
         b"pk-synthetic-export-test",
     ):
@@ -95,6 +110,8 @@ def test_sdk_payload_is_metadata_only_and_correlated(enabled, monkeypatch, tmp_p
     assert attributes["langfuse.observation.metadata.record_id"].string_value == run["id"]
     assert attributes["langfuse.observation.metadata.question_index"].int_value == 0
     assert attributes["langfuse.internal.as_root"].bool_value is True
+    assert attributes["langfuse.experiment.id"].string_value == "synthetic-experiment"
+    assert "langfuse.experiment.item.expected_output" not in attributes
     assert "langfuse.observation.metadata.question" not in attributes
     monkeypatch.setattr(obs, "_client", None)
 

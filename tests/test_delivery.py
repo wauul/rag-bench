@@ -4,8 +4,47 @@ import httpx
 import pytest
 
 from scripts.deploy import deploy
+from scripts.smoke import smoke
 
 IMAGE = "ghcr.io/wauul/ragbench-compact@sha256:" + "a" * 64
+
+
+@pytest.mark.parametrize("gateway", ["guarded", "public", "wrong-host", "wrong-return"])
+def test_private_dashboard_requires_exact_authentication_gateway(monkeypatch, gateway):
+    from urllib.parse import urlencode
+
+    monkeypatch.setenv("API_TOKEN", "synthetic")
+    monkeypatch.setenv("DASHBOARD_ACCESS", "streamlit-private")
+
+    def handler(request):
+        if request.url.host == "api.example":
+            if request.url.path == "/health":
+                return httpx.Response(
+                    200, json={"revision": "tested", "authentication_required": True}
+                )
+            if request.url.path == "/ready":
+                return httpx.Response(200, json={"status": "ready"})
+            return httpx.Response(
+                200 if request.headers.get("Authorization") else 401, json={"runs": []}
+            )
+        host = "evil.example" if gateway == "wrong-host" else "share.streamlit.io"
+        target = "https://wrong.example/" if gateway == "wrong-return" else str(request.url)
+        return httpx.Response(
+            200 if gateway == "public" else 303,
+            headers={
+                "Location": f"https://{host}/-/auth/app?{urlencode({'redirect_uri': target})}"
+            },
+        )
+
+    original = httpx.Client
+    monkeypatch.setattr(
+        httpx, "Client", lambda **kw: original(transport=httpx.MockTransport(handler), **kw)
+    )
+    if gateway == "guarded":
+        smoke("https://api.example", "https://dashboard.example", "tested")
+    else:
+        with pytest.raises(AssertionError):
+            smoke("https://api.example", "https://dashboard.example", "tested")
 
 
 def test_render_digest_verified_and_source_autodeploy_rejected():

@@ -11,6 +11,8 @@ from scripts import langfuse_export
 
 def test_native_experiment_payload_is_sanitized_and_links_original_trial(monkeypatch, tmp_path):
     from langfuse import Langfuse
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
     payloads = []
     timestamp = "2026-10-07T00:00:00Z"
@@ -38,10 +40,13 @@ def test_native_experiment_payload_is_sanitized_and_links_original_trial(monkeyp
         }
         return httpx.Response(200, json=response)
 
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider(shutdown_on_exit=False)
     client = Langfuse(
         public_key="pk-synthetic",
         secret_key="sk-synthetic",
-        tracing_enabled=False,
+        tracer_provider=provider,
+        span_exporter=exporter,
         httpx_client=httpx.Client(transport=httpx.MockTransport(transport)),
     )
     monkeypatch.setattr(langfuse_export, "get_client", lambda: client)
@@ -68,3 +73,16 @@ def test_native_experiment_payload_is_sanitized_and_links_original_trial(monkeyp
     assert "PRIVATE" not in json.dumps(payloads)
     assert payloads[-1]["traceId"] == identity("benchmark", run["id"])
     assert payloads[-1]["metadata"]["optimization_id"] == experiment["id"]
+    assert payloads[-1]["metadata"]["question_index"] == 0
+    assert payloads[-1]["metadata"]["configuration_id"] == "baseline"
+    assert payloads[-1]["observationId"]
+    assert provider.force_flush(timeout_millis=5000)
+    spans = exporter.get_finished_spans()
+    assert len(spans) == 1
+    attributes = spans[0].attributes
+    assert attributes["langfuse.experiment.id"] == "synthetic-run"
+    assert (
+        attributes["langfuse.experiment.item.root_observation_id"] == payloads[-1]["observationId"]
+    )
+    assert spans[0].context.trace_id == int(identity("benchmark", run["id"]), 16)
+    assert "PRIVATE" not in str(attributes)

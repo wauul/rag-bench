@@ -63,10 +63,11 @@ jobs:
           API_TOKEN: ${{ secrets.API_TOKEN }}
           API_URL: ${{ vars.API_URL }}
           DASHBOARD_URL: ${{ vars.DASHBOARD_URL }}
+          DASHBOARD_ACCESS: ${{ vars.DASHBOARD_ACCESS }}
           DASHBOARD_APPROVED_REVISION: ${{ vars.DASHBOARD_APPROVED_REVISION }}
           MODE: ${{ inputs.backend_mode }}
         run: |
-          python -c 'import os; assert all(os.environ.get(k) for k in ("RENDER_API_KEY","RENDER_API_SERVICE_ID","API_TOKEN","API_URL","DASHBOARD_URL","DASHBOARD_APPROVED_REVISION")),"Required production setup is missing"'
+          python -c 'import os; assert all(os.environ.get(k) for k in ("RENDER_API_KEY","RENDER_API_SERVICE_ID","API_TOKEN","API_URL","DASHBOARD_URL","DASHBOARD_ACCESS","DASHBOARD_APPROVED_REVISION")),"Required production setup is missing"'
           uv run --no-sync python -m scripts.deploy release/release.json --backend-mode "$MODE" --dashboard-mode streamlit --evidence reports/deployment.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
