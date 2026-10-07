@@ -128,11 +128,27 @@ def get_client():
                                         for a in span.attributes
                                         if a.key
                                         in {
-                                            "langfuse.observation.metadata",
                                             "langfuse.observation.type",
+                                            "langfuse.internal.as_root",
                                             "langfuse.environment",
                                             "langfuse.release",
                                         }
+                                        or (
+                                            a.key.startswith("langfuse.observation.metadata.")
+                                            and bool(
+                                                metadata(
+                                                    {
+                                                        a.key.removeprefix(
+                                                            "langfuse.observation.metadata."
+                                                        ): getattr(
+                                                            a.value,
+                                                            a.value.WhichOneof("value")
+                                                            or "string_value",
+                                                        )
+                                                    }
+                                                )
+                                            )
+                                        )
                                     ]
                                     del span.attributes[:]
                                     span.attributes.extend(attributes)

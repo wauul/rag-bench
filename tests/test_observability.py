@@ -77,8 +77,13 @@ def test_sdk_payload_is_metadata_only_and_correlated(enabled, monkeypatch, tmp_p
     ):
         assert private not in joined
     traces = []
+    attributes = {}
     for payload in payloads:
         batch = ExportTraceServiceRequest.FromString(payload)
+        for resource in batch.resource_spans:
+            for scope in resource.scope_spans:
+                for span in scope.spans:
+                    attributes.update({a.key: a.value for a in span.attributes})
         traces.extend(
             span.trace_id.hex()
             for resource in batch.resource_spans
@@ -86,6 +91,11 @@ def test_sdk_payload_is_metadata_only_and_correlated(enabled, monkeypatch, tmp_p
             for span in scope.spans
         )
     assert set(traces) == {obs.identity("benchmark", run["id"])}
+    assert attributes["langfuse.observation.metadata.workflow"].string_value == "benchmark"
+    assert attributes["langfuse.observation.metadata.record_id"].string_value == run["id"]
+    assert attributes["langfuse.observation.metadata.question_index"].int_value == 0
+    assert attributes["langfuse.internal.as_root"].bool_value is True
+    assert "langfuse.observation.metadata.question" not in attributes
     monkeypatch.setattr(obs, "_client", None)
 
 
