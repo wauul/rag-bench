@@ -259,6 +259,11 @@ class ProfiledClient(httpx.Client):
     """Wrap send so Groq SDK retries and transport failures are counted individually."""
 
     def send(self, request, **kwargs):
+        from backend.optimization_budget import current_budget
+
+        budget = current_budget()
+        if budget:
+            budget.reserve()
         handle = begin_request()
         try:
             response = super().send(request, **kwargs)
@@ -266,11 +271,18 @@ class ProfiledClient(httpx.Client):
             finish_request(handle)
             raise
         finish_request(handle, response)
+        if budget:
+            budget.finish(response)
         return response
 
 
 class ProfiledAsyncClient(httpx.AsyncClient):
     async def send(self, request, **kwargs):
+        from backend.optimization_budget import current_budget
+
+        budget = current_budget()
+        if budget:
+            budget.reserve()
         handle = begin_request()
         try:
             response = await super().send(request, **kwargs)
@@ -278,4 +290,6 @@ class ProfiledAsyncClient(httpx.AsyncClient):
             finish_request(handle)
             raise
         finish_request(handle, response)
+        if budget:
+            budget.finish(response)
         return response

@@ -19,6 +19,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from backend.ingestion import MAX_BYTES, MAX_TEXT, extract_document, parse_test_set
 from backend.investigation_api import install as install_investigation_routes
 from backend.models import METRICS, Configuration, RunRequest, TestSet
+from backend.optimization_api import install as install_optimization_routes
 from backend.profiling_report import interrupt_profile, profile_csv_rows, row_profile
 from backend.run_state import ACTIVE_STATES, validate_retry
 from backend.settings import load_settings, validate_operations
@@ -44,6 +45,12 @@ async def lifespan(app):
     with execution_lock(store, "server.lock"):
         try:
             with execution_lock(store):
+                for experiment in store.list("optimization"):
+                    if experiment["status"] in {"queued", "running"}:
+                        experiment.update(
+                            status="failed", stage="Server restarted; explicit resume required"
+                        )
+                        store.save("optimization", experiment, experiment["id"])
                 for investigation in store.list("investigation"):
                     if investigation["status"] in {"queued", "running"}:
                         investigation.update(
@@ -69,6 +76,13 @@ async def lifespan(app):
             with control_lock:
                 for event in cancel_events.values():
                     event.set()
+            for experiment in store.list("optimization"):
+                if experiment["status"] in {"queued", "running"}:
+                    store.save(
+                        "optimization_cancel",
+                        {"attempt": experiment["attempt"]},
+                        experiment["id"] + "-cancel",
+                    )
             if isinstance(executor, ThreadPoolExecutor):
                 await asyncio.to_thread(executor.shutdown, wait=True)
 
@@ -310,6 +324,7 @@ def require_generation():
 
 
 install_investigation_routes(sys.modules[__name__])
+install_optimization_routes(sys.modules[__name__])
 
 
 @app.post("/api/runs", dependencies=auth, status_code=202)
@@ -372,6 +387,10 @@ def retry_run(run_id: str):
         raise HTTPException(409, "An evaluation is already running. Wait for it to finish.")
     try:
         run = fetch("run", run_id)
+        if run.get("optimization_id"):
+            raise HTTPException(
+                409, "Resume this trial through its optimization experiment to enforce its budget"
+            )
         try:
             validate_retry(run)
             from backend.provenance import validate_snapshot
@@ -442,6 +461,8 @@ def delete_run(run_id: str):
     try:
         with execution_lock(store):
             run = fetch("run", run_id)
+            if run.get("optimization_id"):
+                raise HTTPException(409, "Experiment trial evidence is retained with its report")
             if run["status"] in ACTIVE_STATES:
                 raise HTTPException(409, "Cancel the run before deleting it")
             if any(

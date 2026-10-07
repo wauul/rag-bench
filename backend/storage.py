@@ -103,6 +103,16 @@ class Store:
                 (patch, object_id),
             )
 
+    def fail_queued_optimization(self, object_id):
+        patch = json.dumps({"status": "failed", "stage": "Worker busy; explicit resume required"})
+        with self.connect() as db:
+            db.execute(
+                "UPDATE objects SET payload=payload || %s::jsonb WHERE id=%s AND kind='optimization' AND payload->>'status'='queued'"
+                if self.postgres
+                else "UPDATE objects SET payload=json_patch(payload, ?) WHERE id=? AND kind='optimization' AND json_extract(payload, '$.status')='queued'",
+                (patch, object_id),
+            )
+
     def list(self, kind, limit=None, offset=0):
         with self.connect() as db:
             rows = db.execute(

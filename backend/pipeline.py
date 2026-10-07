@@ -278,8 +278,11 @@ def _execute_run(store, run_id, cancel_event=None, retry=False):
 
     def checkpoint():
         from backend.execution_lock import assert_execution_lock
+        from backend.optimization_budget import current_budget
 
         assert_execution_lock(store)
+        if current_budget():
+            current_budget().check()
         if store.postgres:
             try:
                 cancellation = store.get("cancellation", run_id + "-cancel")

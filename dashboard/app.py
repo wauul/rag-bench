@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 
 from backend.profiling_report import row_profile
 from dashboard.investigation import investigation_panel
+from dashboard.optimization import optimization_page
 from dashboard.performance import performance_metrics, performance_panel
 from dashboard.ui import (
     MODEL_LABELS,
@@ -1022,6 +1023,7 @@ def sidebar():
             "Run": "02  Evaluation",
             "Results": "03  Results",
             "History": "04  History",
+            "Optimize configuration": "Optimize configuration",
         }
         page = st.radio(
             "Workspace",
@@ -1052,6 +1054,8 @@ def sidebar():
 
 if destination := st.session_state.pop("next_page", None):
     navigate(destination)
+if experiment := st.session_state.pop("optimization_pending", None):
+    st.session_state.optimization_choice = experiment
 apply_styles()
 page = sidebar()
 if st.session_state.get("ui_error"):
@@ -1059,7 +1063,13 @@ if st.session_state.get("ui_error"):
 if st.session_state.get("ui_notice"):
     st.success(st.session_state.pop("ui_notice"))
 try:
-    {"Upload / Setup": setup, "Run": run_page, "Results": results, "History": history}[page]()
+    {
+        "Upload / Setup": setup,
+        "Run": run_page,
+        "Results": results,
+        "History": history,
+        "Optimize configuration": lambda: optimization_page(api),
+    }[page]()
 except (requests.RequestException, RuntimeError) as exc:
     st.error(str(exc))
     st.caption(

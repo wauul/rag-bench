@@ -21,6 +21,14 @@ The previously successful local run is `6b74daea575e4a09842f4953c4b05f07`. Its r
 
 ### Current development changes
 
+**Guided configuration optimization** adds reviewable seeded retrieval experiments,
+an enforced provider-attempt budget, frozen tuning/held-out splits, baseline comparison,
+cancellation/resume, report export and saving observed configurations. Start from a
+LangChain + LangGraph baseline in **Optimize configuration**. No improvement is a valid
+outcome; results do not establish a global optimum. See the
+[workflow and budget guide](docs/guided-optimization.md). Hosted availability is separate
+from local implementation.
+
 Configurations now separate **retrieval candidates** (`candidate_k`, 1–40) from **final passages** (`context_k`, 1–8). Reranking selects the final passages from the larger pool. The dashboard includes paginated **History**, **Retry missing work**, **Cancel run**, and separate processed/fully-scored progress counts. Generation and individual metric results are checkpointed to PostgreSQL when configured, or local SQLite. The Dev Container installs both applications and starts both servers. The Neon migration has automated recovery coverage and a real Groq smoke check through both engines; see the storage guide for evidence boundaries.
 
 The dashboard now has a responsive card layout, numbered navigation and a three-step readiness checklist. MiniLM and BGE presets make setup quicker; selected configurations can be edited or removed before evaluation. Results separate the score overview from answer inspection, with readable score cards and expandable evidence passages. History supports configuration-name/run-ID search and status filters on the current page.
