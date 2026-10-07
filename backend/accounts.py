@@ -6,6 +6,7 @@ the result. Neither provider JWTs nor user passwords are stored by Ragbench.
 
 import hashlib
 import json
+import logging
 import os
 import re
 import secrets
@@ -248,12 +249,15 @@ def install(app, get_store, auth):
         authorization = request.headers.get("authorization", "")
         if not authorization.startswith("Bearer "):
             raise HTTPException(401, "Identity proof required")
+        stage = "identity_proof"
         try:
             subject = verified_subject(authorization[7:])
+            stage = "identity_store"
             store = get_store()
             if not store.postgres:
                 raise ValueError("Production identity store required")
             with store.connect(operator=True) as db:
+                stage = "browser_binding"
                 row = live_flow(store, db, body.flow)
                 cookie = request.cookies.get("rb_login", "")
                 if (
@@ -263,6 +267,7 @@ def install(app, get_store, auth):
                     or row[2]
                 ):
                     raise ValueError("Invalid sign-in state")
+                stage = "active_account"
                 verified_user(db, subject)
                 user_id = "acct_" + digest(provider + ":" + subject)[:40]
                 db.execute(
@@ -276,7 +281,12 @@ def install(app, get_store, auth):
                 )
         except HTTPException:
             raise
-        except Exception:
+        except Exception as error:
+            # Operational classification only: never log tokens, claims, cookies,
+            # identifiers, exception messages, or request bodies.
+            logging.getLogger(__name__).warning(
+                "managed_signin_denied stage=%s error=%s", stage, type(error).__name__
+            )
             raise HTTPException(401, "Sign-in could not be verified") from None
         # Only the browser presenting identity proof receives this secret. Polling
         # with an initiator's verifier alone can never steal another browser's login.
