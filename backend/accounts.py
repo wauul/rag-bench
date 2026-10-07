@@ -39,7 +39,8 @@ def configuration():
             or parsed.fragment
         ):
             raise ValueError("Account authentication is not configured")
-    if not urlsplit(provider).hostname.endswith(".neon.tech"):
+    provider_host = urlsplit(provider).hostname
+    if not provider_host or not provider_host.endswith(".neon.tech"):
         raise ValueError("Untrusted identity provider")
     return provider, origin, issuer, audience
 

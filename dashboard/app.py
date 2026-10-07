@@ -80,7 +80,7 @@ if (
                 managed_login(BASE, TOKEN)
             # Owner recovery and API/CLI keys remain available, deliberately secondary.
         with (
-            st.expander("Operator or API access")
+            st.expander("Advanced access")
             if setting("ACCOUNT_LOGIN_ENABLED") == "true"
             else st.container(key="login_layout")
         ):
@@ -479,7 +479,7 @@ def setup():
         )
         with st.expander("Privacy and retention"):
             st.caption(
-                "Your access key isolates your uploaded data and runs. Selected passages, questions, references and answers are sent to Groq. Inactive data expires after 30 days unless referenced by retained work. Export results you need to keep; use non-sensitive test data."
+                "Your account keeps uploads and runs private. Selected passages, questions, references and answers are sent to Groq. Inactive data expires after 30 days unless referenced by retained work. Export results you need to keep; use non-sensitive test data."
             )
         if st.button("Save documents", disabled=not files, width="stretch"):
             with st.spinner("Saving documents…"):
@@ -1094,7 +1094,7 @@ def history():
     if left.button("Newer runs", disabled=offset == 0, width="stretch"):
         st.session_state.history_offset = max(0, offset - 20)
         st.rerun()
-    middle.caption("Your runs are private to your access key. Export results to keep a copy.")
+    middle.caption("Your runs are private to your account. Export results to keep a copy.")
     if right.button("Older runs", disabled=response["next_offset"] is None, width="stretch"):
         st.session_state.history_offset = response["next_offset"]
         st.rerun()

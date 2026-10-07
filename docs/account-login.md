@@ -9,6 +9,12 @@ retention policies separately from Ragbench's experiment retention.
 The Streamlit server creates a ten-minute sign-in flow with a SHA-256 challenge.
 A random, ten-minute Secure/SameSite browser nonce binds the return to that same
 browser. A separate top-level sign-in tab handles Neon cookies and OAuth.
+The welcome screen offers GitHub and email directly, without a preliminary
+"continue" step. GitHub creates an account on first use. Email signup and reset
+remain available on the email screen. The OAuth return exchanges Neon's
+`neon_auth_session_verifier` with `/get-session` before requesting identity proof,
+then removes the consumed verifier from the URL. This matches the managed
+client's [getSession contract](https://github.com/neondatabase/neon-js/blob/main/packages/auth/src/core/better-auth-methods.ts).
 Finishing requires the pinned provider's signed JWT, exact issuer/audience,
 verified active database account, exact Origin, and matching HttpOnly gateway
 cookie. No identity is accepted from email or user-editable metadata.

@@ -41,14 +41,12 @@ def managed_login(base, operator_token):
             except requests.RequestException:
                 st.error("Sign-in could not be verified. Start again.")
     st.title("RAG Bench")
-    st.caption("Compare retrieval. Understand the evidence.")
-    st.subheader("Welcome to your workspace")
-    st.write(
-        "Sign in with GitHub or your email and password. New here? Create an account on the sign-in page."
-    )
-    if "account_flow" not in st.session_state and st.button(
-        "Continue to sign in", type="primary", width="stretch"
-    ):
+    st.subheader("Your experiments, in one place")
+    st.caption("Sign in or create an account to get started.")
+    pending = st.session_state.get("account_flow")
+    if pending and time.time() - pending["started_at"] > 600:
+        st.session_state.pop("account_flow", None)
+    if "account_flow" not in st.session_state:
         if not admit_login():
             st.error("Too many sign-in attempts. Try again in one minute.")
             return
@@ -67,13 +65,11 @@ def managed_login(base, operator_token):
                 "verifier": verifier,
                 "started_at": time.time(),
             }
-            st.rerun()
         except requests.RequestException:
             st.error("Sign-in is temporarily unavailable. Please try again.")
+            if st.button("Try again", width="stretch"):
+                st.rerun()
     if pending := st.session_state.get("account_flow"):
-        st.link_button(
-            "Sign in with GitHub or email", pending["url"], type="primary", width="stretch"
-        )
         # This short-lived nonce binds the callback to the initiating browser.
         # It is not an API credential; all actual sessions stay server-side.
         cookie = (
@@ -83,17 +79,15 @@ def managed_login(base, operator_token):
             "<script>document.cookie=" + json.dumps(cookie) + ";</script>",
             unsafe_allow_javascript=True,
         )
-        st.caption("Sign-in opens in a new tab and returns you to your private workspace.")
-        if time.time() - pending["started_at"] > 600:
-            st.session_state.pop("account_flow", None)
-            st.warning("Sign-in expired. Start again.")
-            st.rerun()
-        if st.button("Start again", width="stretch"):
-            st.session_state.pop("account_flow", None)
-            st.rerun()
-    st.caption(
-        "Your account keeps experiments private. Email verification is required. Forgot your password? Use the reset option on the sign-in page."
-    )
+        st.link_button(
+            "Continue with GitHub",
+            pending["url"] + "&method=github",
+            type="primary",
+            width="stretch",
+        )
+        st.link_button("Continue with email", pending["url"] + "&method=email", width="stretch")
+        st.caption("New here? GitHub creates your account automatically.")
+    st.caption("Your experiments stay private to your account.")
 
 
 def sign_out(base):
