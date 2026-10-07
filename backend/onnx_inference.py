@@ -4,12 +4,16 @@ MiniLM/BGE use their original tokenizers and pooling (mean/CLS respectively).
 Weights are dynamically int8 quantized at image build time. Quantization is disclosed in
 run provenance; scripts/check_onnx.py compares against Sentence Transformers directly.
 """
+
+import json
 import os
 from pathlib import Path
+
 import numpy as np
 import onnxruntime as ort
 from tokenizers import Tokenizer
-from backend.models import MODELS
+
+from backend.models import MODEL_REVISIONS, MODELS
 
 RERANKER = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
@@ -18,8 +22,20 @@ def model_dir(name):
     return Path(os.getenv("ONNX_MODEL_DIR", "data/onnx")) / name.replace("/", "--")
 
 
+def validate_model_revision(name):
+    manifest = model_dir(name) / "provenance.json"
+    if (
+        not manifest.exists()
+        or json.loads(manifest.read_text()).get("model_revision") != MODEL_REVISIONS[name]
+    ):
+        raise ValueError(
+            "ONNX model revision is unknown or incompatible; run scripts.prepare_onnx or rebuild the image"
+        )
+
+
 class ChunkTokenizer:
     def __init__(self):
+        validate_model_revision(MODELS[0])
         self.tokenizer = Tokenizer.from_file(str(model_dir(MODELS[0]) / "tokenizer.json"))
         self.tokenizer.no_truncation()
         self.tokenizer.no_padding()
@@ -30,6 +46,7 @@ class ChunkTokenizer:
 
 class OnnxModel:
     def __init__(self, name):
+        validate_model_revision(name)
         self.name = name
         directory = model_dir(name)
         self.tokenizer = Tokenizer.from_file(str(directory / "tokenizer.json"))
@@ -41,15 +58,20 @@ class OnnxModel:
         options.enable_cpu_mem_arena = False
         options.enable_mem_pattern = False
         options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-        self.session = ort.InferenceSession(str(directory / "model.int8.onnx"), sess_options=options,
-                                            providers=["CPUExecutionProvider"])
+        self.session = ort.InferenceSession(
+            str(directory / "model.int8.onnx"),
+            sess_options=options,
+            providers=["CPUExecutionProvider"],
+        )
         self.inputs = {i.name for i in self.session.get_inputs()}
 
     def forward(self, inputs):
         tokens = self.tokenizer.encode_batch(inputs)
-        values = {"input_ids": np.array([t.ids for t in tokens], dtype=np.int64),
-                  "attention_mask": np.array([t.attention_mask for t in tokens], dtype=np.int64),
-                  "token_type_ids": np.array([t.type_ids for t in tokens], dtype=np.int64)}
+        values = {
+            "input_ids": np.array([t.ids for t in tokens], dtype=np.int64),
+            "attention_mask": np.array([t.attention_mask for t in tokens], dtype=np.int64),
+            "token_type_ids": np.array([t.type_ids for t in tokens], dtype=np.int64),
+        }
         output = self.session.run(None, {k: v for k, v in values.items() if k in self.inputs})[0]
         return output, values["attention_mask"]
 
@@ -57,7 +79,7 @@ class OnnxModel:
         embeddings = []
         # Small batches contain activation memory as well as model-weight memory.
         for start in range(0, len(texts), 2):
-            output, mask = self.forward(texts[start:start + 2])
+            output, mask = self.forward(texts[start : start + 2])
             if self.name == MODELS[1]:
                 pooled = output[:, 0, :]
             else:

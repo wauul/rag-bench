@@ -1,6 +1,7 @@
 """Ragas adapter for Groq's single-completion API and nested reasoning usage metadata."""
-from ragas.llms.base import LangchainLLMWrapper
+
 from langchain_core.outputs import LLMResult
+from ragas.llms.base import LangchainLLMWrapper
 
 
 class GroqRagasLLM(LangchainLLMWrapper):
@@ -10,7 +11,8 @@ class GroqRagasLLM(LangchainLLMWrapper):
         # Request each completion separately and combine only the generated text.
         generations = []
         for _ in range(n):
-            result = await super().agenerate_text(prompt, n=1, temperature=temperature,
-                                                  stop=stop, callbacks=callbacks)
+            result = await super().agenerate_text(
+                prompt, n=1, temperature=temperature, stop=stop, callbacks=callbacks
+            )
             generations.append(result.generations[0][0])
         return LLMResult(generations=[generations])

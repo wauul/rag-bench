@@ -1,8 +1,15 @@
 from typing import Literal
+
 from pydantic import AliasChoices, BaseModel, Field, model_validator
 
 MODELS = ["sentence-transformers/all-MiniLM-L6-v2", "BAAI/bge-small-en-v1.5"]
 METRICS = ["faithfulness", "answer_relevancy", "context_precision", "context_recall"]
+ENGINES = {"existing": "Existing pipeline", "langgraph": "LangChain + LangGraph"}
+MODEL_REVISIONS = {
+    "sentence-transformers/all-MiniLM-L6-v2": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+    "BAAI/bge-small-en-v1.5": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+    "cross-encoder/ms-marco-MiniLM-L-6-v2": "233902d25c440f23af6f7d6e94d2946bac0bee0a",
+}
 
 
 class Question(BaseModel):
@@ -17,13 +24,17 @@ class TestSet(BaseModel):
 
 class Configuration(BaseModel):
     name: str = Field(min_length=1, max_length=60)
+    engine: Literal["existing", "langgraph"] = "existing"
     # WordPiece tokens, capped below MiniLM's 256-token window to avoid silent truncation.
     chunk_size: int = Field(default=192, ge=32, le=240)
     overlap: int = Field(default=32, ge=0)
-    embedding_model: Literal["sentence-transformers/all-MiniLM-L6-v2", "BAAI/bge-small-en-v1.5"] = MODELS[0]
+    embedding_model: Literal["sentence-transformers/all-MiniLM-L6-v2", "BAAI/bge-small-en-v1.5"] = (
+        "sentence-transformers/all-MiniLM-L6-v2"
+    )
     rerank: bool = False
-    context_k: int = Field(default=3, ge=1, le=8,
-                           validation_alias=AliasChoices("context_k", "top_k"))
+    context_k: int = Field(
+        default=3, ge=1, le=8, validation_alias=AliasChoices("context_k", "top_k")
+    )
     candidate_k: int | None = Field(default=None, ge=1, le=40)
 
     @model_validator(mode="before")

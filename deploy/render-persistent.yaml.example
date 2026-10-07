@@ -1,0 +1,26 @@
+# REVIEW ONLY. Applying this provisions paid Render compute and storage.
+# Do not apply without explicit approval. The default render.yaml stays Free.
+services:
+  - type: web
+    name: rag-bench-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile.render
+    plan: starter
+    healthCheckPath: /health
+    disk:
+      name: rag-bench-data
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
+      - key: API_TOKEN
+        sync: false
+      - key: DATA_DIR
+        value: /app/data
+      - key: DATA_STORAGE
+        value: persistent
+      - key: GROQ_REQUEST_INTERVAL
+        value: "4"
+      - key: RAGBENCH_LANGSMITH
+        value: "false"

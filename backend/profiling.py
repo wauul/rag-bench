@@ -3,6 +3,7 @@
 Only numeric provider usage is retained. Prompts, answers, headers and keys are never
 copied into the profile. Context variables attribute async judge calls to their row.
 """
+
 import math
 import platform
 import time
@@ -10,8 +11,10 @@ from contextlib import contextmanager, nullcontext
 from contextvars import ContextVar
 from datetime import datetime, timezone
 from threading import Event, Lock, Thread
+
 import httpx
 import psutil
+
 from backend.profiling_report import empty_usage, interrupt_profile, summarize_profile
 
 _current = ContextVar("rag_bench_profiler", default=None)
@@ -25,7 +28,7 @@ def timestamp():
 
 def process_rss_mb():
     try:
-        return psutil.Process().memory_info().rss / (1024 ** 2)
+        return psutil.Process().memory_info().rss / (1024**2)
     except (psutil.Error, OSError):
         return None
 
@@ -33,15 +36,36 @@ def process_rss_mb():
 class RunProfiler:
     def __init__(self, run, on_update=None, *, clock=time.monotonic, rss_reader=process_rss_mb):
         interrupt_profile(run)
-        self.profile = run.setdefault("profiling", {"version": 1, "coverage": "since_enabled" if run["rows"] or run.get("attempt", 1) > 1 else "full",
-            "memory_kind": "backend_process_rss", "memory_unit": "MiB",
-            "sample_interval_seconds": SAMPLE_INTERVAL, "attempts": []})
+        self.profile = run.setdefault(
+            "profiling",
+            {
+                "version": 1,
+                "coverage": "since_enabled" if run["rows"] or run.get("attempt", 1) > 1 else "full",
+                "memory_kind": "backend_process_rss",
+                "memory_unit": "MiB",
+                "sample_interval_seconds": SAMPLE_INTERVAL,
+                "attempts": [],
+            },
+        )
         self.clock, self.rss_reader, self.on_update = clock, rss_reader, on_update
-        self.attempt = {"number": run.get("attempt", 1), "started_at": timestamp(), "finished_at": None,
-            "status": "running", "seconds": 0, "rss_start_mb": None, "rss_end_mb": None,
-            "rss_peak_mb": None, "memory_samples": 0, "spans": [],
-            "environment": {"platform": platform.platform(), "python": platform.python_version(),
-                            "logical_cpus": psutil.cpu_count(), "inference_backend": run.get("provenance", {}).get("inference_backend")}}
+        self.attempt = {
+            "number": run.get("attempt", 1),
+            "started_at": timestamp(),
+            "finished_at": None,
+            "status": "running",
+            "seconds": 0,
+            "rss_start_mb": None,
+            "rss_end_mb": None,
+            "rss_peak_mb": None,
+            "memory_samples": 0,
+            "spans": [],
+            "environment": {
+                "platform": platform.platform(),
+                "python": platform.python_version(),
+                "logical_cpus": psutil.cpu_count(),
+                "inference_backend": run.get("provenance", {}).get("inference_backend"),
+            },
+        }
         self.profile["attempts"].append(self.attempt)
         self._lock, self._stop = Lock(), Event()
         self._active, self._peak, self._span_peak = None, None, None
@@ -80,10 +104,14 @@ class RunProfiler:
     def snapshot(self):
         self.attempt["seconds"] = round(self.clock() - self.started, 6)
         with self._lock:
-            self.attempt.update(rss_peak_mb=round(self._peak, 3) if self._peak is not None else None,
-                                memory_samples=self._samples)
+            self.attempt.update(
+                rss_peak_mb=round(self._peak, 3) if self._peak is not None else None,
+                memory_samples=self._samples,
+            )
             if self._active is not None:
-                self._active["rss_peak_mb"] = round(self._span_peak, 3) if self._span_peak is not None else None
+                self._active["rss_peak_mb"] = (
+                    round(self._span_peak, 3) if self._span_peak is not None else None
+                )
                 self._active["seconds"] = round(self.clock() - self._active_started, 6)
         self.profile["summary"] = summarize_profile(self.profile)
 
@@ -97,9 +125,19 @@ class RunProfiler:
         # Operations are serial; no nesting prevents double-counting time and usage.
         if _span.get() is not None:
             raise RuntimeError("Profiling phases must not overlap")
-        entry = {"stage": stage, **labels, "started_at": timestamp(), "finished_at": None,
-            "status": "running", "seconds": 0, "rss_start_mb": None, "rss_end_mb": None,
-            "rss_peak_mb": None, "rss_delta_mb": None, "groq": empty_usage()}
+        entry = {
+            "stage": stage,
+            **labels,
+            "started_at": timestamp(),
+            "finished_at": None,
+            "status": "running",
+            "seconds": 0,
+            "rss_start_mb": None,
+            "rss_end_mb": None,
+            "rss_peak_mb": None,
+            "rss_delta_mb": None,
+            "groq": empty_usage(),
+        }
         started = self.clock()
         with self._lock:
             self._active, self._active_started, self._span_peak = entry, started, None
@@ -117,7 +155,9 @@ class RunProfiler:
         finally:
             entry["rss_end_mb"] = self.sample_memory()
             with self._lock:
-                entry["rss_peak_mb"] = round(self._span_peak, 3) if self._span_peak is not None else None
+                entry["rss_peak_mb"] = (
+                    round(self._span_peak, 3) if self._span_peak is not None else None
+                )
                 self._active = None
             if entry["rss_start_mb"] is not None and entry["rss_end_mb"] is not None:
                 entry["rss_delta_mb"] = round(entry["rss_end_mb"] - entry["rss_start_mb"], 3)
@@ -155,7 +195,14 @@ def begin_request():
 
 
 def number(value):
-    return value if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value >= 0 else None
+    return (
+        value
+        if isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and value >= 0
+        else None
+    )
 
 
 def finish_request(handle, response=None):
@@ -176,19 +223,27 @@ def finish_request(handle, response=None):
             usage = usage if isinstance(usage, dict) else {}
         except (ValueError, httpx.ResponseNotRead):
             usage = {}
-        prompt, completion, total = (number(usage.get(k)) for k in ("prompt_tokens", "completion_tokens", "total_tokens"))
+        prompt, completion, total = (
+            number(usage.get(k)) for k in ("prompt_tokens", "completion_tokens", "total_tokens")
+        )
         # Sum reported components if the provider omitted the redundant total.
         if total is None and prompt is not None and completion is not None:
             total = prompt + completion
         complete = all(v is not None for v in (prompt, completion, total))
         if success:
             stats["usage_reports" if complete else "missing_usage_reports"] += 1
-        for key, value in (("prompt_tokens", prompt), ("completion_tokens", completion), ("total_tokens", total)):
+        for key, value in (
+            ("prompt_tokens", prompt),
+            ("completion_tokens", completion),
+            ("total_tokens", total),
+        ):
             if value is not None:
                 stats[key] += value
                 stats[key.replace("_tokens", "_token_reports")] += 1
-        for source, detail, target in (("completion_tokens_details", "reasoning_tokens", "reasoning_tokens"),
-                                        ("prompt_tokens_details", "cached_tokens", "cached_tokens")):
+        for source, detail, target in (
+            ("completion_tokens_details", "reasoning_tokens", "reasoning_tokens"),
+            ("prompt_tokens_details", "cached_tokens", "cached_tokens"),
+        ):
             details = usage.get(source)
             value = number(details.get(detail)) if isinstance(details, dict) else None
             if value is not None:
@@ -202,6 +257,7 @@ def finish_request(handle, response=None):
 
 class ProfiledClient(httpx.Client):
     """Wrap send so Groq SDK retries and transport failures are counted individually."""
+
     def send(self, request, **kwargs):
         handle = begin_request()
         try:

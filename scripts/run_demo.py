@@ -1,9 +1,11 @@
 """Run the full real demo against a running backend and require complete finite scores."""
-import os
+
 import math
+import os
 import sys
 import time
 from pathlib import Path
+
 import httpx
 from dotenv import load_dotenv
 
@@ -18,7 +20,10 @@ with httpx.Client(base_url=base, headers=headers, timeout=120) as client:
         response = client.post("/api/demo")
         response.raise_for_status()
         demo = response.json()
-        response = client.post("/api/runs", json={k: demo[k] for k in ["document_set_id", "test_set_id", "configuration_ids"]})
+        response = client.post(
+            "/api/runs",
+            json={k: demo[k] for k in ["document_set_id", "test_set_id", "configuration_ids"]},
+        )
         response.raise_for_status()
         run_id = response.json()["id"]
     print("Run:", run_id, flush=True)
@@ -45,9 +50,12 @@ with httpx.Client(base_url=base, headers=headers, timeout=120) as client:
     out.write_text(response.text, encoding="utf-8")
     assert run["status"] == "completed", f"Incomplete run; inspect {out}"
     assert len(run["rows"]) == 20
-    assert all(not row["errors"] and len(row["scores"]) == 4
-               and all(value is not None and math.isfinite(value) for value in row["scores"].values())
-               for row in run["rows"]), "Expected all 80 finite real scores without errors"
+    assert all(
+        not row["errors"]
+        and len(row["scores"]) == 4
+        and all(value is not None and math.isfinite(value) for value in row["scores"].values())
+        for row in run["rows"]
+    ), "Expected all 80 finite real scores without errors"
     assert any(s["overall"] > 0 for s in run["summary"])
     csv = client.get(f"/api/runs/{run_id}/export")
     csv.raise_for_status()

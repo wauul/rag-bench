@@ -1,6 +1,8 @@
 from copy import deepcopy
 from types import SimpleNamespace
+
 import pytest
+
 from backend.models import METRICS
 from backend.storage import Store
 from scripts.retry_failed import recover
@@ -8,21 +10,42 @@ from scripts.retry_failed import recover
 
 def test_recovery_preserves_successful_scores_and_failure_history(tmp_path, monkeypatch):
     import backend.pipeline as pipeline
+
     monkeypatch.delenv("GROQ_MODEL", raising=False)
     monkeypatch.delenv("INFERENCE_BACKEND", raising=False)
     monkeypatch.setenv("JUDGE_EXAMPLES", "0")
     store = Store(tmp_path)
-    good = {"configuration_id": "cfg", "question_index": 0, "scores": {m: 0.75 for m in METRICS},
-            "errors": {}, "answer": "Original answer", "latency_seconds": 1,
-            "question": "What is this?", "reference": "A lab", "contexts": [{"text": "A lab"}]}
+    good = {
+        "configuration_id": "cfg",
+        "question_index": 0,
+        "scores": {m: 0.75 for m in METRICS},
+        "errors": {},
+        "answer": "Original answer",
+        "latency_seconds": 1,
+        "question": "What is this?",
+        "reference": "A lab",
+        "contexts": [{"text": "A lab"}],
+    }
     bad = deepcopy(good)
     bad.update(question_index=1, errors={"faithfulness": "RateLimitError"})
     bad["scores"]["faithfulness"] = None
     original_bad = deepcopy(bad)
-    run = store.save("run", {"status": "partial", "total": 2, "rows": [good, bad],
-        "questions": [{}, {}], "configurations": [{"id": "cfg", "name": "Config"}],
-        "provenance": {"generator": "qwen/qwen3.8-27b", "judge": "qwen/qwen3.8-27b",
-                       "inference_backend": "sentence-transformers", "judge_prompt_examples": 0}})
+    run = store.save(
+        "run",
+        {
+            "status": "partial",
+            "total": 2,
+            "rows": [good, bad],
+            "questions": [{}, {}],
+            "configurations": [{"id": "cfg", "name": "Config"}],
+            "provenance": {
+                "generator": "qwen/qwen3.8-27b",
+                "judge": "qwen/qwen3.8-27b",
+                "inference_backend": "sentence-transformers",
+                "judge_prompt_examples": 0,
+            },
+        },
+    )
     monkeypatch.setattr(pipeline, "make_llm", lambda: SimpleNamespace(invoke=lambda _: None))
     monkeypatch.setattr(pipeline, "load_embedder", lambda _: object())
     monkeypatch.setattr(pipeline, "make_metrics", lambda *_: dict.fromkeys(METRICS))

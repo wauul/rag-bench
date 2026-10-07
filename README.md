@@ -21,7 +21,7 @@ The previously successful local run is `6b74daea575e4a09842f4953c4b05f07`. Its r
 
 ### Current development changes
 
-Configurations now separate **retrieval candidates** (`candidate_k`, 1–40) from **final passages** (`context_k`, 1–8). Reranking selects the final passages from the larger pool. The dashboard includes paginated **History**, **Retry missing work**, **Cancel run**, and separate processed/fully-scored progress counts. Generation and individual metric results are checkpointed to SQLite. The Dev Container installs both applications and starts both servers. These changes have automated coverage; a new live Groq benchmark and hosted deployment remain unverified.
+Configurations now separate **retrieval candidates** (`candidate_k`, 1–40) from **final passages** (`context_k`, 1–8). Reranking selects the final passages from the larger pool. The dashboard includes paginated **History**, **Retry missing work**, **Cancel run**, and separate processed/fully-scored progress counts. Generation and individual metric results are checkpointed to PostgreSQL when configured, or local SQLite. The Dev Container installs both applications and starts both servers. The Neon migration has automated recovery coverage and a real Groq smoke check through both engines; see the storage guide for evidence boundaries.
 
 The dashboard now has a responsive card layout, numbered navigation and a three-step readiness checklist. MiniLM and BGE presets make setup quicker; selected configurations can be edited or removed before evaluation. Results separate the score overview from answer inspection, with readable score cards and expandable evidence passages. History supports configuration-name/run-ID search and status filters on the current page.
 
@@ -102,6 +102,37 @@ Legacy API input and stored configurations using `top_k` remain supported: it be
 
 ## API
 
+### Execution engines and recovery
+
+Choose **Existing pipeline** (the default, including historical configurations) or
+**LangChain + LangGraph** in the configuration editor. Compare both within the
+same 2–4 configuration benchmark, holding the other settings constant. Selecting
+a framework does not imply better answers.
+
+The graph engine uses reusable LangChain retrieval/prompt components and separate
+LangGraph stages for validation, index preparation, retrieval, optional reranking,
+generation, each missing metric and finalization. Progress, cancel, retry, answer
+inspection, history and downloads use the normal dashboard. Saved answers and
+scores are reused on explicit retry; API restart does not automatically spend quota.
+
+New runs snapshot documents, configurations, settings, model revisions and dependency
+versions. Incompatible retries are rejected. Set `DATABASE_URL` to a direct Neon
+PostgreSQL URL to persist inputs, results, retrieval artifacts and graph checkpoints
+outside Render. Chroma becomes a rebuildable local cache. Render can remain on its
+Free plan; database quotas and cold starts still apply. Without `DATABASE_URL`,
+SQLite remains available locally under `DATA_DIR`, with a Docker volume provided
+by `compose.yaml`. See [free hosting and migration](docs/neon-storage.md).
+
+Read [the architecture and recovery contract](docs/langgraph-architecture.md) for
+state ownership, interruption windows, retry budgets, fairness, storage and rollback.
+LangSmith remains disabled unless `RAGBENCH_LANGSMITH=true` is explicitly set.
+
+The baseline retains its implementation with shared correctness updates: fixed local
+model revisions, two SDK HTTP attempts per logical completion, no outer Ragas retry
+or output-repair loop, no extra readiness request, and score-range validation.
+New runs record these changes as pipeline version 2. Old ONNX model caches need
+`python -m scripts.prepare_onnx` or an image rebuild to establish pinned revisions.
+
 Interactive docs: [localhost:8000/docs](http://localhost:8000/docs).
 
 | Endpoint | Input / output |
@@ -116,6 +147,7 @@ Interactive docs: [localhost:8000/docs](http://localhost:8000/docs).
 | `POST /api/runs/{id}/retry` | Resume a partial, failed or cancelled run using saved work (202) |
 | `POST /api/runs/{id}/cancel` | Request cancellation between operations, preserving results (202) |
 | `GET /api/runs/{id}` | Status, progress, configuration snapshots, provenance, summary, per-question results |
+| `DELETE /api/runs/{id}` | Delete an inactive benchmark, snapshots, graph checkpoints and vector artifacts; shared uploads remain |
 | `GET /api/runs/{id}/export` | CSV, including partial rows if available |
 | `GET /api/runs/{id}/profile` | Saved performance profile and summary; `profiling: null` for runs without measurements |
 | `GET /api/runs/{id}/profile/export` | One CSV row per measured phase/attempt; returns 409 when no phases were recorded |
@@ -131,7 +163,7 @@ Profiling is automatic for new evaluations. It records separate elapsed times fo
 
 Memory is the backend process's resident set size (RSS), measured in **MiB** every 100 ms and at phase boundaries. Each phase records RSS before/after, the change and sampled peak. Model-loading rows name the model and show its process-memory impact. These values include libraries, indexes, Python and allocator effects; they do not isolate model weights. Sampling can miss shorter peaks. Attempt metadata records OS, Python and CPU count so comparisons can account for host differences. First-use downloads can affect model-loading time; compare runs on the same hardware with the same cache conditions.
 
-Groq accounting wraps both synchronous and asynchronous HTTP clients, counting every SDK HTTP attempt, 429 response, other HTTP failure and transport error. Usage includes the readiness check, generation and individual judge completions. Prompt, completion, total, reasoning and cached-token counters use provider-reported values; reasoning/cached tokens are subsets, not additions to the total. A missing redundant total is computed only when both prompt and completion counts are reported. Successful responses without complete usage and requests without a saved outcome are disclosed separately. Unknown usage is never treated as a free request or a fabricated zero. This reports the run's consumption, not account-wide remaining quota or billing cost. No prompts, answer text, credentials or HTTP headers are copied into the profile.
+Groq accounting wraps both synchronous and asynchronous HTTP clients, counting every SDK HTTP attempt, 429 response, other HTTP failure and transport error. Usage includes generation and individual judge completions; historical profiles can also include the former readiness check. Prompt, completion, total, reasoning and cached-token counters use provider-reported values; reasoning/cached tokens are subsets, not additions to the total. A missing redundant total is computed only when both prompt and completion counts are reported. Successful responses without complete usage and requests without a saved outcome are disclosed separately. Unknown usage is never treated as a free request or a fabricated zero. This reports the run's consumption, not account-wide remaining quota or billing cost. No prompts, answer text, credentials or HTTP headers are copied into the profile.
 
 Profiles live in the run's SQLite record and checkpoint phase boundaries and HTTP attempts/outcomes. Retries append an attempt, retaining earlier measurements and costs. A process restart marks open phases/attempts **interrupted** and retains their last saved values as lower bounds; requests that never returned and peaks after the last checkpoint cannot be reconstructed. Historical runs without profiling show it as unavailable. Retrying an older run measures only new work and marks coverage as partial.
 
@@ -145,6 +177,13 @@ Set `BACKEND_URL` and `API_TOKEN` for the target backend. Reports are saved unde
 
 ## Verification
 
+The graph integration adds deterministic tests using real StateGraph, file-backed
+SQLite and Chroma: cross-engine passage/prompt parity, fresh-process crash recovery,
+application/checkpoint reconciliation, cancel/retry, duplicate prevention, stale
+input rejection, bounded SDK failures, actual Ragas/ChatGroq with controlled HTTP,
+and engine-aware API/export/dashboard checks. These tests do not establish live
+Groq quality or hosted durability. See [the verification record](docs/integration-verification.md).
+
 ```powershell
 .venv/Scripts/python.exe -m pytest -q
 .venv/Scripts/python.exe -m scripts.check_retrieval
@@ -152,13 +191,13 @@ Set `BACKEND_URL` and `API_TOKEN` for the target backend. Reports are saved unde
 .venv/Scripts/python.exe -m scripts.run_demo
 ```
 
-The current automated suite has 44 tests covering ingestion validation, malformed/blank/encrypted files, auth, missing keys, settings, non-finite metric errors, partial averages, checkpointed retry/cancellation, restart recovery, history pagination, dashboard actions and CSV formula escaping. Dashboard coverage includes preset creation, configuration editing/removal, guided navigation, validation, history filters and performance rendering. Profiling tests use real Groq SDK calls against controlled HTTP transports to check retry counts, async judge completions, nested token metadata, missing/zero usage and row attribution; memory/clock fixtures test sampled peaks and cumulative attempts. A real persistent Chroma test uses deterministic tiny vectors to verify candidate selection and recorded retrieval/indexing/model-loading phases without downloading models. The separate retrieval check downloads both real embedding models, exercises ten questions per model, checks token windows, and runs a real cross-encoder. These checks do **not** replace the full Groq/Ragas demo. `run_demo` requires 20 complete rows, nonzero mean scores and a working CSV endpoint, and saves results locally under ignored `data/`.
+The baseline suite originally had 44 tests covering ingestion validation, malformed/blank/encrypted files, auth, missing keys, settings, non-finite metric errors, partial averages, checkpointed retry/cancellation, restart recovery, history pagination, dashboard actions and CSV formula escaping. Dashboard coverage includes preset creation, configuration editing/removal, guided navigation, validation, history filters and performance rendering. Profiling tests use real Groq SDK calls against controlled HTTP transports to check retry counts, async judge completions, nested token metadata, missing/zero usage and row attribution; memory/clock fixtures test sampled peaks and cumulative attempts. A real persistent Chroma test uses deterministic tiny vectors to verify candidate selection and recorded retrieval/indexing/model-loading phases without downloading models. The separate retrieval check downloads both real embedding models, exercises ten questions per model, checks token windows, and runs a real cross-encoder. These checks do **not** replace the full Groq/Ragas demo. `run_demo` requires 20 complete rows, nonzero mean scores and a working CSV endpoint, and saves results locally under ignored `data/`.
 
 The redesigned dashboard was also checked in a local headless browser at desktop and 390px mobile widths. Uploads, presets, editing, navigation, history, charts and passage inspection were exercised without calling Groq. Clearly labeled UI fixtures were used only in an ignored, isolated preview store to check results rendering; they are not shipped as benchmark scores.
 
 To verify a demo already started through the dashboard, set `BACKEND_URL` to that backend and run `python -m scripts.run_demo RUN_ID`. It checks all 80 finite scores and saves JSON plus CSV.
 
-After Groq quota recovers, use **Retry missing work** or `POST /api/runs/{id}/retry`. This keeps successful answers/scores, uses the original stored passages, fills missing retrieval rows, and retains previous row attempts in `retry_history`. It accepts partial, failed and cancelled runs, including restart interruptions, while rejecting changed model/backend/judge settings. Complete runs cannot be retried. A retry needs the original document set only when retrieval rows are missing. It cannot restore data lost by an ephemeral host.
+After Groq quota recovers, use **Retry missing work** or `POST /api/runs/{id}/retry`. This keeps successful answers/scores, uses the original stored passages, fills missing retrieval rows, and retains previous row attempts in `retry_history`. It accepts partial, failed and cancelled runs, including restart interruptions, while rejecting changed model/backend/judge settings. Complete runs cannot be retried. New runs use immutable input snapshots; legacy retries need the original document set when retrieval rows are missing. It cannot restore data lost by an ephemeral host.
 
 For offline **local** recovery, stop the local API and run `python -m scripts.retry_failed RUN_ID`, then restart the API. The command uses the same execution/checkpoint code as API retry. Both paths preserve existing configuration snapshots; previously saved `top_k` runs keep their smaller candidate pools.
 

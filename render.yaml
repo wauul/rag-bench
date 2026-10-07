@@ -1,4 +1,4 @@
-# Compact int8 ONNX runtime; free instances have ephemeral result storage.
+# Free compute; authoritative data/checkpoints live in external Neon Free PostgreSQL.
 services:
   - type: web
     name: rag-bench-api
@@ -13,3 +13,11 @@ services:
         generateValue: true
       - key: GROQ_REQUEST_INTERVAL
         value: "4"
+      - key: DATA_STORAGE
+        value: ephemeral
+      - key: DATABASE_URL
+        sync: false
+      - key: APP_ENV
+        value: production
+      - key: RAGBENCH_LANGSMITH
+        value: "false"

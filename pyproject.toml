@@ -1,0 +1,71 @@
+[project]
+name = "ragbench"
+version = "1.1.0"
+requires-python = ">=3.11,<3.12"
+description = "Durable CPU RAG comparison service and dashboard"
+dependencies = []
+
+[project.optional-dependencies]
+backend = [
+  "fastapi==0.142.2", "uvicorn==0.35.0", "python-multipart==0.0.32",
+  "python-dotenv==1.2.4", "pydantic==2.11.7", "chromadb==1.5.9",
+  "ragas==0.3.9", "instructor>=1.12,<2", "tenacity==9.1.4",
+  "langchain-groq==1.1.3", "groq==0.37.1", "langchain-core==1.6.7",
+  "langchain==1.4.3", "langchain-community==0.3.31", "langchain-openai==1.6.7",
+  "langgraph==1.2.14", "langgraph-prebuilt==1.1.0", "langgraph-sdk==0.4.6",
+  "langgraph-checkpoint==4.2.0", "langgraph-checkpoint-sqlite==3.1.1",
+  "langgraph-checkpoint-postgres==3.1.2", "psycopg[binary]==3.3.6",
+  "pandas==2.3.2", "pypdf==6.19.0", "httpx==0.28.1", "psutil==7.0.0",
+]
+cpu = ["sentence-transformers==6.1.0", "torch==2.8.0", "transformers==5.19.0"]
+compact = ["onnxruntime==1.22.1", "tokenizers==0.23.2", "huggingface-hub>=1,<2"]
+models = ["onnx==1.23.2", "onnxruntime==1.22.1", "tokenizers==0.23.2", "huggingface-hub>=1,<2", "pydantic==2.11.7"]
+dashboard = ["streamlit==1.65.0", "pandas==2.3.2", "plotly==6.3.0", "requests==2.33.0", "python-dotenv==1.2.4"]
+
+[dependency-groups]
+dev = ["pytest>=9.1.1,<10", "pytest-cov>=6,<8", "ruff>=0.14,<1", "mypy>=1.18,<2",
+       "pip-audit>=2.9,<3", "bandit>=1.8,<2", "pyyaml>=6,<7", "types-requests", "types-PyYAML"]
+
+[tool.uv]
+package = false
+constraint-dependencies = ["pillow>=12.3.0", "starlette>=1.3.1"]
+environments = ["sys_platform == 'win32'", "sys_platform == 'linux'"]
+required-environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'", "sys_platform == 'win32' and platform_machine == 'AMD64'"]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.mypy]
+python_version = "3.11"
+follow_imports = "silent"
+files = ["backend/settings.py", "backend/models.py", "backend/ingestion.py", "scripts/backup.py", "scripts/deploy.py", "scripts/smoke.py"]
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: real pinned local-model integration without paid provider calls"]
+
+[tool.coverage.run]
+source = ["backend", "scripts"]
+omit = ["scripts/deploy_hf.py", "scripts/run_demo.py", "scripts/prepare_onnx.py", "scripts/check_onnx.py", "scripts/check_retrieval.py", "scripts/profile_run.py"]
+
+[tool.coverage.report]
+show_missing = true
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv", ".tools"]

@@ -1,13 +1,27 @@
-FROM python:3.11-slim
+# syntax=docker/dockerfile:1
+FROM ghcr.io/astral-sh/uv:0.12.19@sha256:04d046b13e60d6bcec73cbc5e1cad25d680dea90c8573340950a0ac2d1aef424 AS uv
+FROM python:3.11.16-slim-bookworm@sha256:a36c24f9cbdf4fd0f52d67f0823eeac19c2028c637cecc392d97f980d4fec56b AS deps
+COPY --from=uv /uv /usr/local/bin/uv
 WORKDIR /app
-ENV PYTHONUNBUFFERED=1 TOKENIZERS_PARALLELISM=false OMP_NUM_THREADS=1 \
-    HF_HUB_DISABLE_TELEMETRY=1 RAGAS_DO_NOT_TRACK=true DATA_DIR=/app/data
-COPY backend/requirements.txt backend/requirements-core.txt backend/
-RUN pip install --no-cache-dir torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu \
-    && pip install --no-cache-dir -r backend/requirements.txt
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
+COPY pyproject.toml uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --no-dev --extra backend --extra cpu
+
+FROM python:3.11.16-slim-bookworm@sha256:a36c24f9cbdf4fd0f52d67f0823eeac19c2028c637cecc392d97f980d4fec56b
+WORKDIR /app
+ARG APP_REVISION=local
+ENV APP_REVISION=$APP_REVISION PATH=/app/.venv/bin:$PATH PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 HOME=/home/app \
+    TOKENIZERS_PARALLELISM=false OMP_NUM_THREADS=1 HF_HUB_DISABLE_TELEMETRY=1 \
+    RAGAS_DO_NOT_TRACK=true DATA_DIR=/app/data HF_HOME=/app/cache/huggingface
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 app && useradd --uid 10001 --gid app --create-home app \
+    && mkdir /app/data /app/cache && chown -R app:app /app/data /app/cache
+COPY --from=deps /app/.venv /app/.venv
 COPY backend backend
+COPY scripts scripts
 COPY sample_data sample_data
-RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
-RUN python -c "import ragas; from backend.groq_judge import GroqRagasLLM; from ragas.metrics import Faithfulness, ResponseRelevancy, LLMContextPrecisionWithReference, LLMContextRecall"
+USER 10001:10001
 EXPOSE 8000
-CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s CMD python -c "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:'+os.getenv('PORT','8000')+'/health',timeout=4)"
+CMD ["python", "-m", "scripts.serve"]

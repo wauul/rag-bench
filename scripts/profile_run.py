@@ -1,8 +1,10 @@
 """Download a saved run's performance report: python -m scripts.profile_run RUN_ID."""
+
 import json
 import os
 import sys
 from pathlib import Path
+
 import httpx
 from dotenv import load_dotenv
 
@@ -13,13 +15,17 @@ def main():
         raise SystemExit("Usage: python -m scripts.profile_run RUN_ID")
     run_id = sys.argv[1]
     base = os.getenv("BACKEND_URL", "http://127.0.0.1:8000").rstrip("/")
-    headers = {"Authorization": "Bearer " + os.environ["API_TOKEN"]} if os.getenv("API_TOKEN") else {}
+    headers = (
+        {"Authorization": "Bearer " + os.environ["API_TOKEN"]} if os.getenv("API_TOKEN") else {}
+    )
     with httpx.Client(base_url=base, headers=headers, timeout=120) as client:
         response = client.get(f"/api/runs/{run_id}/profile")
         response.raise_for_status()
         profile = response.json()["profiling"]
         if not profile:
-            raise SystemExit("Profiling was not recorded for this run. Start a new benchmark to collect it.")
+            raise SystemExit(
+                "Profiling was not recorded for this run. Start a new benchmark to collect it."
+            )
         # Run IDs are also accepted from external input; filenames never contain path separators.
         filename = "".join(c for c in run_id if c.isalnum() or c in "-_")
         if not filename:

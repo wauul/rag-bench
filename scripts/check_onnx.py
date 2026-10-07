@@ -1,12 +1,15 @@
 """Compare real compact embeddings/reranking against Sentence Transformers; no scoring mocks."""
+
 import gc
 import json
 from pathlib import Path
+
 import numpy as np
 from sentence_transformers import CrossEncoder
+
 from backend.models import MODELS
-from backend.retrieval import load_embedder, embed
-from backend.onnx_inference import OnnxModel, RERANKER
+from backend.onnx_inference import RERANKER, OnnxModel
+from backend.retrieval import embed, load_embedder
 
 
 def main():
@@ -28,7 +31,11 @@ def main():
     baseline = CrossEncoder(RERANKER, device="cpu").predict(pairs)
     optimized = OnnxModel(RERANKER).predict(pairs)
     assert int(np.argmax(baseline)) == int(np.argmax(optimized)) == 0
-    print("Reranker top passage preserved; max logit change:", float(np.max(np.abs(baseline - optimized))), flush=True)
+    print(
+        "Reranker top passage preserved; max logit change:",
+        float(np.max(np.abs(baseline - optimized))),
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

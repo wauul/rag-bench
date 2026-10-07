@@ -1,13 +1,16 @@
 """Exercise durable worker checkpoints with deterministic retrieval/LLM boundaries."""
+
 from collections import Counter
 from copy import deepcopy
 from threading import Event
 from types import SimpleNamespace
+
 import pytest
-from backend.models import Configuration, METRICS
+
+from backend.models import METRICS, Configuration
+from backend.pipeline import execute_run
 from backend.settings import load_settings
 from backend.storage import Store
-from backend.pipeline import execute_run
 
 
 @pytest.fixture
@@ -16,23 +19,51 @@ def benchmark(tmp_path, monkeypatch):
         monkeypatch.delenv(key, raising=False)
     store = Store(tmp_path)
     configurations = [{"id": cid, **Configuration(name=cid).model_dump()} for cid in ("a", "b")]
-    questions = [{"question": "Question one?", "reference": "Answer one"},
-                 {"question": "Question two?", "reference": "Answer two"}]
-    run = store.save("run", {"status": "queued", "stage": "Queued", "created_at": "2026-09-30T00:00:00Z",
-        "document_set_id": "docs", "questions": questions, "configurations": configurations,
-        "total": 4, "completed": 0, "rows": [], "summary": [], "attempt": 1,
-        "provenance": load_settings().provenance()})
+    questions = [
+        {"question": "Question one?", "reference": "Answer one"},
+        {"question": "Question two?", "reference": "Answer two"},
+    ]
+    run = store.save(
+        "run",
+        {
+            "status": "queued",
+            "stage": "Queued",
+            "created_at": "2026-09-30T00:00:00Z",
+            "document_set_id": "docs",
+            "questions": questions,
+            "configurations": configurations,
+            "total": 4,
+            "completed": 0,
+            "rows": [],
+            "summary": [],
+            "attempt": 1,
+            "provenance": load_settings().provenance(),
+        },
+    )
     return store, run
 
 
 def fake_dependencies(monkeypatch, store, run_id, event=None):
     import backend.pipeline as pipeline
+
     calls = Counter()
 
     def retrieve(store, run_id, config, questions, indexes, checkpoint, stage):
         calls["retrieval:" + config["id"]] += 1
-        return {i: [{"text": "Saved evidence", "source": "test.txt", "page": 1,
-                     "chunk_id": "0", "distance": 0.1, "token_start": 0, "token_end": 2}] for i in indexes}
+        return {
+            i: [
+                {
+                    "text": "Saved evidence",
+                    "source": "test.txt",
+                    "page": 1,
+                    "chunk_id": "0",
+                    "distance": 0.1,
+                    "token_start": 0,
+                    "token_end": 2,
+                }
+            ]
+            for i in indexes
+        }
 
     class LLM:
         def invoke(self, prompt):
@@ -50,8 +81,15 @@ def fake_dependencies(monkeypatch, store, run_id, event=None):
         async def single_turn_ascore(self, sample, **kwargs):
             calls[self.name] += 1
             saved = store.get("run", run_id)
-            row = next(r for r in saved["rows"] if r["question"] == sample.user_input
-                       and r.get("stage") == "scoring") if self.name == METRICS[0] else None
+            row = (
+                next(
+                    r
+                    for r in saved["rows"]
+                    if r["question"] == sample.user_input and r.get("stage") == "scoring"
+                )
+                if self.name == METRICS[0]
+                else None
+            )
             if row:
                 assert row["answer"] == "Generated answer"
             if event and self.name == METRICS[0] and calls[self.name] == 1:
@@ -72,7 +110,9 @@ def test_cancel_checkpoint_and_resume_without_repeating_answers_or_scores(benchm
     execute_run(store, run["id"], cancel_event=event)
     cancelled = store.get("run", run["id"])
     assert cancelled["status"] == "cancelled"
-    assert len(cancelled["rows"]) == 2  # Retrieval saved before generation, including unanswered rows.
+    assert (
+        len(cancelled["rows"]) == 2
+    )  # Retrieval saved before generation, including unanswered rows.
     first = cancelled["rows"][0]
     assert first["answer"] == "Generated answer"
     assert first["scores"]["faithfulness"] == 0.8
@@ -82,6 +122,7 @@ def test_cancel_checkpoint_and_resume_without_repeating_answers_or_scores(benchm
 
     # Retry after restart/cancellation uses stored evidence, fills the missing configuration.
     from scripts.retry_failed import recover
+
     recover(store, run["id"])
     finished = store.get("run", run["id"])
     assert finished["status"] == "completed"
@@ -92,6 +133,7 @@ def test_cancel_checkpoint_and_resume_without_repeating_answers_or_scores(benchm
     assert finished["retry_history"][0]["previous_row"] == preserved
     assert finished["completed"] == finished["scored"] == 4 and finished["valid_scores"] == 16
     from backend.profiling_report import spans
+
     entries = list(spans(finished["profiling"]))
     assert len([e for e in entries if e["stage"] == "generation"]) == 4
     assert len([e for e in entries if e["stage"] == "scoring"]) == 16
@@ -101,7 +143,10 @@ def test_cancel_checkpoint_and_resume_without_repeating_answers_or_scores(benchm
 def test_cancel_queued_run_makes_no_model_or_provider_calls(benchmark, monkeypatch):
     store, run = benchmark
     import backend.pipeline as pipeline
-    monkeypatch.setattr(pipeline, "make_llm", lambda: pytest.fail("Queued cancellation called provider"))
+
+    monkeypatch.setattr(
+        pipeline, "make_llm", lambda: pytest.fail("Queued cancellation called provider")
+    )
     event = Event()
     event.set()
     execute_run(store, run["id"], cancel_event=event)
@@ -112,6 +157,7 @@ def test_generation_failure_retries_only_that_answer(benchmark, monkeypatch):
     store, run = benchmark
     calls = fake_dependencies(monkeypatch, store, run["id"])
     import backend.pipeline as pipeline
+
     generate = pipeline.generate_answer
     failed = False
 
@@ -128,6 +174,7 @@ def test_generation_failure_retries_only_that_answer(benchmark, monkeypatch):
     assert partial["status"] == "partial" and partial["completed"] == 4 and partial["scored"] == 3
     good = deepcopy(partial["rows"][1:])
     from scripts.retry_failed import recover
+
     recover(store, run["id"])
     finished = store.get("run", run["id"])
     assert finished["status"] == "completed" and finished["rows"][1:] == good
@@ -144,8 +191,10 @@ def test_restart_after_last_metric_finishes_from_saved_scores(benchmark, monkeyp
     original_rows = deepcopy(saved["rows"])
     store.save("run", saved, run["id"])
     import backend.pipeline as pipeline
+
     monkeypatch.setattr(pipeline, "make_llm", lambda: pytest.fail("No provider work was missing"))
     from scripts.retry_failed import recover
+
     recover(store, run["id"])
     finished = store.get("run", run["id"])
     assert finished["status"] == "completed" and finished["completed"] == 4

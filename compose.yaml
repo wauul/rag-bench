@@ -1,0 +1,44 @@
+services:
+  api:
+    image: ${API_IMAGE:-ragbench-api:local}
+    build:
+      context: .
+      dockerfile: ${API_DOCKERFILE:-Dockerfile}
+      args:
+        APP_REVISION: ${APP_REVISION:-local}
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 180s
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    environment:
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-qwen/qwen3.8-27b}
+      API_TOKEN: ${API_TOKEN:?Set a random API_TOKEN of at least 32 characters}
+      APP_ENV: production
+      DATA_DIR: /app/data
+      DATA_STORAGE: persistent
+      RAGBENCH_LANGSMITH: "false"
+    volumes:
+      - ragbench-data:/app/data
+      - ragbench-cache:/app/cache
+  dashboard:
+    image: ${DASHBOARD_IMAGE:-ragbench-dashboard:local}
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+      args:
+        APP_REVISION: ${APP_REVISION:-local}
+    init: true
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${DASHBOARD_PORT:-8501}:8501"
+    environment:
+      BACKEND_URL: http://api:8000
+      API_TOKEN: ${API_TOKEN:?Set API_TOKEN}
+volumes:
+  ragbench-data:
+  ragbench-cache:

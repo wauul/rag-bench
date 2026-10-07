@@ -1,11 +1,13 @@
 """Verify accounting against controlled HTTP responses; no real provider calls or scores."""
+
 import asyncio
 import json
 from contextvars import copy_context
 from copy import deepcopy
+
 import httpx
-import pytest
-from backend.profiling import ProfiledClient, ProfiledAsyncClient, RunProfiler, measure
+
+from backend.profiling import ProfiledAsyncClient, ProfiledClient, RunProfiler, measure
 from backend.profiling_report import interrupt_profile, profile_csv_rows, row_profile
 
 
@@ -14,12 +16,26 @@ def run_record():
 
 
 def completion(usage=True):
-    payload = {"id": "test", "model": "fixture", "choices": [
-        {"index": 0, "message": {"role": "assistant", "content": "A controlled response"}, "finish_reason": "stop"}]}
+    payload = {
+        "id": "test",
+        "model": "fixture",
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": "A controlled response"},
+                "finish_reason": "stop",
+            }
+        ],
+    }
     if usage:
-        payload["usage"] = {"prompt_tokens": 10, "completion_tokens": 4, "total_tokens": 14,
-            "completion_tokens_details": {"reasoning_tokens": 2}, "prompt_tokens_details": {"cached_tokens": 3},
-            "total_time": 0.25}
+        payload["usage"] = {
+            "prompt_tokens": 10,
+            "completion_tokens": 4,
+            "total_tokens": 14,
+            "completion_tokens_details": {"reasoning_tokens": 2},
+            "prompt_tokens_details": {"cached_tokens": 3},
+            "total_time": 0.25,
+        }
     return payload
 
 
@@ -44,8 +60,9 @@ def test_sampled_peak_timings_and_model_delta_are_preserved():
 
 
 def test_groq_sdk_retries_count_each_http_attempt_and_reported_usage(monkeypatch):
-    from backend.pipeline import make_llm
     import backend.pipeline as pipeline
+    from backend.pipeline import make_llm
+
     monkeypatch.setenv("GROQ_API_KEY", "test-only")
     monkeypatch.setenv("GROQ_REQUEST_INTERVAL", "0.1")
     calls = []
@@ -53,7 +70,11 @@ def test_groq_sdk_retries_count_each_http_attempt_and_reported_usage(monkeypatch
     def provider(request):
         calls.append(request)
         if len(calls) == 1:
-            return httpx.Response(429, headers={"retry-after-ms": "1"}, json={"error": {"message": "Fixture rate limit"}})
+            return httpx.Response(
+                429,
+                headers={"retry-after-ms": "1"},
+                json={"error": {"message": "Fixture rate limit"}},
+            )
         return httpx.Response(200, json=completion())
 
     client = ProfiledClient(transport=httpx.MockTransport(provider))
@@ -63,7 +84,10 @@ def test_groq_sdk_retries_count_each_http_attempt_and_reported_usage(monkeypatch
     try:
         with RunProfiler(run) as profiler:
             with measure("generation", configuration_id="a", question_index=0):
-                assert llm.invoke("Private prompt must not be persisted").content == "A controlled response"
+                assert (
+                    llm.invoke("Private prompt must not be persisted").content
+                    == "A controlled response"
+                )
             profiler.status = "completed"
     finally:
         client.close()
@@ -71,27 +95,41 @@ def test_groq_sdk_retries_count_each_http_attempt_and_reported_usage(monkeypatch
     stats = run["profiling"]["summary"]["groq"]
     assert stats["http_requests"] == 2 and stats["http_successes"] == stats["http_failures"] == 1
     assert stats["rate_limit_responses"] == 1 and stats["usage_reports"] == 1
-    assert stats["prompt_tokens"] == 10 and stats["completion_tokens"] == 4 and stats["total_tokens"] == 14
+    assert (
+        stats["prompt_tokens"] == 10
+        and stats["completion_tokens"] == 4
+        and stats["total_tokens"] == 14
+    )
     assert stats["reasoning_tokens"] == 2 and stats["cached_tokens"] == 3
     serialized = json.dumps(run["profiling"], allow_nan=False)
-    assert "Private prompt" not in serialized and "test-only" not in serialized and "controlled response" not in serialized
+    assert (
+        "Private prompt" not in serialized
+        and "test-only" not in serialized
+        and "controlled response" not in serialized
+    )
 
 
 def test_async_judge_multiple_completions_and_row_context_are_not_double_counted(monkeypatch):
-    from backend.pipeline import make_llm
-    from backend.groq_judge import GroqRagasLLM
     from langchain_core.prompt_values import StringPromptValue
+
     import backend.pipeline as pipeline
+    from backend.groq_judge import GroqRagasLLM
+    from backend.pipeline import make_llm
+
     monkeypatch.setenv("GROQ_API_KEY", "test-only")
     monkeypatch.setenv("GROQ_REQUEST_INTERVAL", "0.1")
-    async_client = ProfiledAsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(200, json=completion())))
+    async_client = ProfiledAsyncClient(
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json=completion()))
+    )
     monkeypatch.setattr(pipeline, "ProfiledAsyncClient", lambda: async_client)
     llm = make_llm()
     judge = GroqRagasLLM(llm, bypass_n=True)
     run = run_record()
 
     async def score(index):
-        with measure("scoring", configuration_id="a", question_index=index, metric="answer_relevancy"):
+        with measure(
+            "scoring", configuration_id="a", question_index=index, metric="answer_relevancy"
+        ):
             return await judge.agenerate_text(StringPromptValue(text="Fixture question"), n=3)
 
     # Runner reuse previously captured the first row's context. Each run must use the current context.
@@ -121,7 +159,10 @@ def test_missing_usage_transport_errors_and_zero_tokens_are_distinguished():
         raise httpx.ConnectError("Fixture transport failure", request=request)
 
     run = run_record()
-    with ProfiledClient(transport=httpx.MockTransport(provider)) as client, RunProfiler(run) as profiler:
+    with (
+        ProfiledClient(transport=httpx.MockTransport(provider)) as client,
+        RunProfiler(run) as profiler,
+    ):
         for index in (0, 1, 2):
             try:
                 with measure("generation", configuration_id="a", question_index=index):
