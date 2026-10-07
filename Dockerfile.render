@@ -22,8 +22,9 @@ ARG APP_REVISION=local
 ENV APP_REVISION=$APP_REVISION PATH=/app/.venv/bin:$PATH PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 HOME=/home/app \
     TOKENIZERS_PARALLELISM=false OMP_NUM_THREADS=1 HF_HUB_DISABLE_TELEMETRY=1 \
     RAGAS_DO_NOT_TRACK=true DATA_DIR=/app/data HF_HOME=/app/cache/huggingface INFERENCE_BACKEND=onnx ONNX_MODEL_DIR=/app/models MALLOC_ARENA_MAX=2
-RUN apt-get update && apt-get install -y --no-install-recommends git \
+RUN apt-get update && apt-get install -y --no-install-recommends git libpcre2-8-0 perl-base \
     && rm -rf /var/lib/apt/lists/* \
+    && /usr/local/bin/python -m pip uninstall --yes pip setuptools wheel \
     && groupadd --gid 10001 app && useradd --uid 10001 --gid app --create-home app \
     && mkdir /app/data /app/cache && chown -R app:app /app/data /app/cache
 COPY --from=deps /app/.venv /app/.venv

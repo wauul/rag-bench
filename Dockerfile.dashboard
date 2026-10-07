@@ -11,7 +11,10 @@ FROM python:3.11.16-slim-bookworm@sha256:a36c24f9cbdf4fd0f52d67f0823eeac19c2028c
 WORKDIR /app
 ARG APP_REVISION=local
 ENV APP_REVISION=$APP_REVISION PATH=/app/.venv/bin:$PATH PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 HOME=/home/app
-RUN groupadd --gid 10001 app && useradd --uid 10001 --gid app --create-home app
+RUN apt-get update && apt-get install -y --no-install-recommends libpcre2-8-0 perl-base \
+    && rm -rf /var/lib/apt/lists/* \
+    && /usr/local/bin/python -m pip uninstall --yes pip setuptools wheel \
+    && groupadd --gid 10001 app && useradd --uid 10001 --gid app --create-home app
 COPY --from=deps /app/.venv /app/.venv
 COPY dashboard dashboard
 COPY backend/__init__.py backend/models.py backend/profiling_report.py backend/
