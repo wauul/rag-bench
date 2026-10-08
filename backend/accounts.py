@@ -6,6 +6,7 @@ the result. Neither provider JWTs nor user passwords are stored by Ragbench.
 
 import hashlib
 import json
+import logging
 import os
 import re
 import secrets
@@ -39,7 +40,8 @@ def configuration():
             or parsed.fragment
         ):
             raise ValueError("Account authentication is not configured")
-    if not urlsplit(provider).hostname.endswith(".neon.tech"):
+    provider_host = urlsplit(provider).hostname
+    if not provider_host or not provider_host.endswith(".neon.tech"):
         raise ValueError("Untrusted identity provider")
     return provider, origin, issuer, audience
 
@@ -174,7 +176,7 @@ def login_page(flow=""):
             "Cache-Control": "no-store",
             "Referrer-Policy": "no-referrer",
             "X-Content-Type-Options": "nosniff",
-            "Content-Security-Policy": f"default-src 'none'; script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; connect-src 'self' {provider}; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+            "Content-Security-Policy": f"default-src 'none'; script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; connect-src 'self' {provider}/; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
         }
     )
     return response
@@ -207,14 +209,22 @@ def install(app, get_store, auth):
         }
 
     @app.get("/auth/login")
-    def login(flow: str, request: Request):
+    def login(request: Request, flow: str = ""):
+        def restart_page():
+            response = login_page()
+            response.status_code = 400
+            return response
+
         if not re.fullmatch(r"[a-zA-Z0-9_-]{32,80}", flow):
-            raise HTTPException(400, "Start sign-in from the dashboard")
+            return restart_page()
         configuration()
         store = get_store()
         cookie = request.cookies.get("rb_login", "")
         with store.connect(operator=True) as db:
-            row = live_flow(store, db, flow)
+            try:
+                row = live_flow(store, db, flow)
+            except HTTPException:
+                return restart_page()
             if not row[1]:
                 cookie = secrets.token_urlsafe(32)
                 db.execute(
@@ -225,7 +235,7 @@ def install(app, get_store, auth):
                     (digest(cookie), flow),
                 )
             elif not cookie or not secrets.compare_digest(row[1], digest(cookie)):
-                raise HTTPException(400, "Return to the browser where you started sign-in")
+                return restart_page()
         response = login_page(flow)
         response.set_cookie(
             "rb_login",
@@ -247,12 +257,15 @@ def install(app, get_store, auth):
         authorization = request.headers.get("authorization", "")
         if not authorization.startswith("Bearer "):
             raise HTTPException(401, "Identity proof required")
+        stage = "identity_proof"
         try:
             subject = verified_subject(authorization[7:])
+            stage = "identity_store"
             store = get_store()
             if not store.postgres:
                 raise ValueError("Production identity store required")
             with store.connect(operator=True) as db:
+                stage = "browser_binding"
                 row = live_flow(store, db, body.flow)
                 cookie = request.cookies.get("rb_login", "")
                 if (
@@ -262,6 +275,7 @@ def install(app, get_store, auth):
                     or row[2]
                 ):
                     raise ValueError("Invalid sign-in state")
+                stage = "active_account"
                 verified_user(db, subject)
                 user_id = "acct_" + digest(provider + ":" + subject)[:40]
                 db.execute(
@@ -275,7 +289,12 @@ def install(app, get_store, auth):
                 )
         except HTTPException:
             raise
-        except Exception:
+        except Exception as error:
+            # Operational classification only: never log tokens, claims, cookies,
+            # identifiers, exception messages, or request bodies.
+            logging.getLogger(__name__).warning(
+                "managed_signin_denied stage=%s error=%s", stage, type(error).__name__
+            )
             raise HTTPException(401, "Sign-in could not be verified") from None
         # Only the browser presenting identity proof receives this secret. Polling
         # with an initiator's verifier alone can never steal another browser's login.

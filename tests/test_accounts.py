@@ -43,6 +43,12 @@ def test_flow_requires_authenticated_start_and_private_verifier(account_client):
     )
     assert response.headers["referrer-policy"] == "no-referrer"
     assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
+    # CSP paths without a trailing slash match only that exact path, blocking
+    # /sign-in/social, /get-session and /token beneath the managed Auth API.
+    assert (
+        "connect-src 'self' https://test.neonauth.neon.tech/neondb/auth/;"
+        in response.headers["content-security-policy"]
+    )
     assert (
         client.post(
             "/auth/redeem", json={"flow": flow, "verifier": "x" * 32, "ticket": "t" * 32}
@@ -55,8 +61,14 @@ def test_flow_requires_authenticated_start_and_private_verifier(account_client):
         ).status_code
         == 403
     )
+    assert "destination.origin===pinned.origin" in response.text
+    assert "destination.pathname===pinned.pathname+'/sign-in/social/init'" in response.text
     other = TestClient(client.app)
-    assert other.get("/auth/login", params={"flow": flow}).status_code == 400
+    restart = other.get("/auth/login", params={"flow": flow})
+    assert restart.status_code == 400
+    assert restart.headers["content-type"].startswith("text/html")
+    assert "Back to Ragbench" in restart.text
+    assert "set-cookie" not in restart.headers
     with store.connect(operator=True) as db:
         db.execute("UPDATE account_flows SET expires_at=0")
     assert (
