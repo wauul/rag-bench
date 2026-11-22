@@ -27,7 +27,7 @@ class RuntimeSettings(BaseModel):
         return {
             "generator": self.model,
             "judge": self.model,
-            "ragas": "0.3.9",
+            "ragas": "0.4.4",
             "relevancy_embeddings": "sentence-transformers/all-MiniLM-L6-v2",
             "inference_backend": self.inference_backend,
             "precision": "dynamic-int8" if self.inference_backend == "onnx" else "float32",

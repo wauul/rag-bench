@@ -34,6 +34,7 @@ def test_results_table_chart_and_drilldown(monkeypatch):
     monkeypatch.setenv("BACKEND_URL", "http://test-backend")
     metrics = ["faithfulness", "answer_relevancy", "context_precision", "context_recall"]
     configs = [{"id": "a", "name": "A"}, {"id": "b", "name": "B"}]
+    literal_answer = "**A test answer**"
     summary = [
         {
             "configuration_id": c["id"],
@@ -50,7 +51,7 @@ def test_results_table_chart_and_drilldown(monkeypatch):
         {
             "configuration_id": c["id"],
             "question_index": 0,
-            "answer": "A test answer",
+            "answer": literal_answer,
             "errors": {},
             "latency_seconds": 1.0,
             "scores": {m: 0.5 for m in metrics},
@@ -74,7 +75,7 @@ def test_results_table_chart_and_drilldown(monkeypatch):
         "created_at": "test fixture",
         "rows": rows,
         "configurations": configs,
-        "questions": [{"question": "A test question?", "reference": "A test answer"}],
+        "questions": [{"question": "A test question?", "reference": literal_answer}],
         "summary": summary,
         "provenance": {"source": "UI test fixture"},
     }
@@ -96,6 +97,8 @@ def test_results_table_chart_and_drilldown(monkeypatch):
         assert len(app.get("plotly_chart")) == 4
         assert len(app.dataframe) == 2
         assert any(t.value == "A test passage" for t in app.text)
+        assert sum(t.value == literal_answer for t in app.text) == 3
+        assert all(literal_answer not in m.value for m in app.markdown)
         assert [tab.label for tab in app.tabs] == [
             "Score overview",
             "Question scores",

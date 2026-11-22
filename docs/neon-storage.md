@@ -8,8 +8,10 @@ continues to use the same authenticated API.
 
 - Create a dedicated Neon Free project near the API region (Oregon for this service).
 - Set `DATABASE_URL` on the API to the **direct** connection URL with
-  `sslmode=require` (or stricter). Do not use a `-pooler` endpoint: worker locks are
-  session advisory locks, which require a stable PostgreSQL session.
+  `sslmode=verify-full&sslrootcert=system` when the provider uses a publicly
+  trusted CA. For a private CA, set `sslrootcert` to its certificate file instead.
+  Update existing connection URLs before deploying this version. Use the direct
+  endpoint because worker advisory locks require a stable PostgreSQL session.
 - Preserve the existing `API_TOKEN` and `GROQ_API_KEY`. Set `APP_ENV=production`.
 - Leave `DATA_STORAGE=ephemeral` for the local filesystem. `/health` and new runs
   report `storage: postgres` when the configured authoritative store is PostgreSQL.

@@ -108,9 +108,9 @@ build==1.6.1 ; sys_platform == 'linux' or sys_platform == 'win32' \
     --hash=sha256:51cc11666391ab6f092070437ac747002ff46f3e4113a3622177ee6b488bfc53 \
     --hash=sha256:ecd351a4be9d35a9eaaba244a7687143c9c7d4aea6ac964e7e7ddab20cbcf4e7
     # via chromadb
-certifi==2026.7.22 ; sys_platform == 'linux' or sys_platform == 'win32' \
-    --hash=sha256:62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775 \
-    --hash=sha256:741e2c3b351ddf169a738da9f2c048608ff7f2c5cc02f1ebc6b118bb090d5d55
+certifi==2026.11.20 ; sys_platform == 'linux' or sys_platform == 'win32' \
+    --hash=sha256:7422df25243767b9877031a2248cb14d09ddac9beee846f4cef3d5c9191d488f \
+    --hash=sha256:af1cb240a8133f105aa52684a3a3258339d7f2fd0bd4e2812698ff5cf5588c4e
     # via
     #   httpcore
     #   httpx
@@ -271,9 +271,9 @@ fastapi==0.142.2 ; sys_platform == 'linux' or sys_platform == 'win32' \
     --hash=sha256:06366626f2e70576367714d9ab2fe8472e6c8456dba69b399f9f797ab5e92570 \
     --hash=sha256:bd5f4d81f1e93a88bcd77caf4dfe3c2dbffc3805407a0007e9a114c18b3a670b
     # via ragbench
-filelock==4.0.12 ; sys_platform == 'linux' or sys_platform == 'win32' \
-    --hash=sha256:5f17ee83ecee8a6f3e389c75822fb70a1c2f0506b99438a6dffa1d56793588c8 \
-    --hash=sha256:cf42711a7ac791818b299fab0332a088c65aeeefa36290de98db92c434303b0c
+filelock==4.2.12 ; sys_platform == 'linux' or sys_platform == 'win32' \
+    --hash=sha256:21decfec02f116ed4c954433cdb31f28c3b346b784543177b6d7059da2702ee9 \
+    --hash=sha256:7e7da24d3ac39268b0f156e56870001de44886318f092f9d851e692f7114d6dd
     # via
     #   datasets
     #   huggingface-hub
@@ -305,14 +305,6 @@ fsspec==2026.6.0 ; sys_platform == 'linux' or sys_platform == 'win32' \
     # via
     #   datasets
     #   huggingface-hub
-gitdb==4.0.12 ; sys_platform == 'linux' or sys_platform == 'win32' \
-    --hash=sha256:5ef71f855d191a3326fcfbc0d5da835f26b13fbcba60c32c21091c349ffdb571 \
-    --hash=sha256:67073e15955400952c6565cc3e707c554a4eea2e428946f7a4c162fab9bd9bcf
-    # via gitpython
-gitpython==3.2.0 ; sys_platform == 'linux' or sys_platform == 'win32' \
-    --hash=sha256:bd70c5ec05cd2b797423e7eb312147d2458d3cca92085888fba2213f85905537 \
-    --hash=sha256:fb92310af6844d96adc95ca066ed2e617c00e1dbd146a326626c81e72e18cc2e
-    # via ragas
 googleapis-common-protos==1.75.5 ; sys_platform == 'linux' or sys_platform == 'win32' \
     --hash=sha256:c7a866fc34ed29a3b10af627a4b9b1dc2433313ca6e959f0ae4feb132047ed72 \
     --hash=sha256:d7285525c23039db98f2463e6d5a4f9b958b94d497f03a844ece3259c4e72d5d
@@ -515,18 +507,18 @@ langgraph==1.2.14 ; sys_platform == 'linux' or sys_platform == 'win32' \
     # via
     #   langchain
     #   ragbench
-langgraph-checkpoint==4.2.0 ; sys_platform == 'linux' or sys_platform == 'win32' \
-    --hash=sha256:0547fd228935a0b758865de3a3d6d7a2537c308895d0f9ab092ce9151b5da942 \
-    --hash=sha256:51a593b6bee684b0818e5d6e58e28ab340c6db7794575056ce7bd1b746a84ed7
+langgraph-checkpoint==4.3.0 ; sys_platform == 'linux' or sys_platform == 'win32' \
+    --hash=sha256:bedfafe2f997ded60e4fa593e79f56f436a6e45586392dc382aa810d0c751c64 \
+    --hash=sha256:c75965d84cc2c1d549163e910a15bcb577758001b141619d05297c463280b018
     # via
     #   langgraph
     #   langgraph-checkpoint-postgres
     #   langgraph-checkpoint-sqlite
     #   langgraph-prebuilt
     #   ragbench
-langgraph-checkpoint-postgres==3.1.2 ; sys_platform == 'linux' or sys_platform == 'win32' \
-    --hash=sha256:1cd404803ff895a2b79f3ac04ce92b775e6b999715f8333fce674c6d927bba95 \
-    --hash=sha256:6a7e38ef16985b54e356cba7bdaf447943aae33d5aaf290026c593bb6b4a6264
+langgraph-checkpoint-postgres==3.1.3 ; sys_platform == 'linux' or sys_platform == 'win32' \
+    --hash=sha256:050ae583223e24d97747f27b9e06e7345bf13c972f1fb6ed33bb3d1f9c11cee4 \
+    --hash=sha256:a152a9c0c3d5931bc949b64e01e8c7da20be57a32aa754626446318e90a07650
     # via ragbench
 langgraph-checkpoint-sqlite==3.1.1 ; sys_platform == 'linux' or sys_platform == 'win32' \
     --hash=sha256:6fcb20db4c37ef7aad52f29b539eb98c38e2dad6fab7c2446a2a9db24f37a70e \
@@ -663,9 +655,9 @@ numpy==2.4.6 ; sys_platform == 'linux' or sys_platform == 'win32' \
     #   ragas
     #   scikit-network
     #   scipy
-oauthlib==4.0.0 ; sys_platform == 'linux' or sys_platform == 'win32' \
-    --hash=sha256:624c28c13a0a59cabf9747dfa52af63be3e512a7f2714df16e91b5b3a145e6cd \
-    --hash=sha256:efb274799819440f95b4ab3b818869f1ce9ae26c5beacba0201d1a1b76b54f86
+oauthlib==4.0.1 ; sys_platform == 'linux' or sys_platform == 'win32' \
+    --hash=sha256:3d73febdb6faa00f277c81fb04be7b7586fb96fc3b7f0b9c772dada69a25ede7 \
+    --hash=sha256:498a298876e996301950a5b053d12c31628bb7b895db03666430c69ce182eb61
     # via requests-oauthlib
 onnxruntime==1.22.1 ; sys_platform == 'linux' or sys_platform == 'win32' \
     --hash=sha256:7ae7526cf10f93454beb0f751e78e5cb7619e3b92f9fc3bd51aa6f3b7a8977e5 \
@@ -679,9 +671,9 @@ openai==3.3.0 ; sys_platform == 'linux' or sys_platform == 'win32' \
     #   instructor
     #   langchain-openai
     #   ragas
-opentelemetry-api==1.45.1 ; sys_platform == 'linux' or sys_platform == 'win32' \
-    --hash=sha256:aa38ed19bcc084ba42782a73255b3582283eced7ad6dddbd6695189e69adfb75 \
-    --hash=sha256:b31553efa588ae44bc306f863c785c5333a9ecc091248c6ee68b4b6c87fdedfb
+opentelemetry-api==1.45.2 ; sys_platform == 'linux' or sys_platform == 'win32' \
+    --hash=sha256:2cbd737377e710ee740d261c94e93fa0f08e6d037c18f17513cc0a2d94479a34 \
+    --hash=sha256:d7b0008e21e5fd61cbe7a7f34ca3b6905a78ab677d9bc395e299359c75cda6b4
     # via
     #   chromadb
     #   fastapi
@@ -722,18 +714,18 @@ opentelemetry-proto==1.45.1 ; sys_platform == 'linux' or sys_platform == 'win32'
     #   opentelemetry-exporter-otlp-proto-common
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
-opentelemetry-sdk==1.45.1 ; sys_platform == 'linux' or sys_platform == 'win32' \
-    --hash=sha256:63d24a6ca645019a631e6a51999c73e93adcac1196ca640b8ae78a7cc4762bf3 \
-    --hash=sha256:c604c11dc429810812348989115fa44bd558772a3d7442afc43d024f2c250ca4
+opentelemetry-sdk==1.45.2 ; sys_platform == 'linux' or sys_platform == 'win32' \
+    --hash=sha256:7eec4de13dd21ff3a1670dcb0e02079e692736f94d733dfdce5af461d884248d \
+    --hash=sha256:ff974ea70ee4f1d51e2ec152db37c2b626c7bf82bb3f7d86114fd8704e7199c6
     # via
     #   chromadb
     #   langfuse
     #   opentelemetry-exporter-otlp-common
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
-opentelemetry-semantic-conventions==0.66b1 ; sys_platform == 'linux' or sys_platform == 'win32' \
-    --hash=sha256:497ca63bf383723411e8eaf60c8779e9877633c936bb641080adab59d0eb6ec8 \
-    --hash=sha256:d4cddeb4315490b35213f55e2bdc9ac54bb1e4d318927475bed62b35545e581b
+opentelemetry-semantic-conventions==0.66b2 ; sys_platform == 'linux' or sys_platform == 'win32' \
+    --hash=sha256:4cbe61e5f9275d57ab31708446e7938ef4291ebbe6a7fca6f7a629c5acae87d8 \
+    --hash=sha256:7da5f1a5dc4383eb66711d4d3d3e71824d9403ac1559fea021cc103c1a4c4976
     # via opentelemetry-sdk
 orjson==3.12.0 ; sys_platform == 'linux' or sys_platform == 'win32' \
     --hash=sha256:31ed278a36304390adc3eec5d7f6fd593a7c3e99e5a06cd07866396c4b1b4710 \
@@ -788,18 +780,18 @@ pandas==2.3.2 ; sys_platform == 'linux' or sys_platform == 'win32' \
     # via
     #   datasets
     #   ragbench
-pillow==12.3.0 ; sys_platform == 'linux' or sys_platform == 'win32' \
-    --hash=sha256:04f01d28a6aaff387bf842a13be313df23ba0597a44f1a976c9feb3c6ff4711a \
-    --hash=sha256:10e41f0fbf1eec8cfd234b8fe17a4caac7c9d0db4c204d3c173a8f9f6ef3232b \
-    --hash=sha256:236ff70b9312fb68943c703aa842ca6a758abfa45ac187a5e7c1452e96ef72b5 \
-    --hash=sha256:23d27a3e0307ec2244cc51e7287b919aa68d097504ebe19df4e76a98a3eea5bd \
-    --hash=sha256:3b8182a766685eaa002637e28b4ec8d6b18819a0c71f579bf0dbaa5830297cce \
-    --hash=sha256:4f883547d4b7f0495ebe7056b0cc2aea76094e7a4abc8e933540f3271df27d9c \
-    --hash=sha256:8e95e1385e4998ae9694eeaa4730ba5457ff61185b3a55e2e7bea0880aef452a \
-    --hash=sha256:bcb46e2f9feff8d06323983bd83ed00c201fdcab3d74973e7072a889b3979fcd \
-    --hash=sha256:e7e480451b9fa137494bccd3a7d69adbe8ac65a87d97be61e11f1b1050a5bac3 \
-    --hash=sha256:ebaea975e03d3141d9d3a507df75c9b3ec90fa9d2ffd07567b3a978d9d790b26 \
-    --hash=sha256:fbd139c8447d25dd750ab79ee274cc5e1fe80fc56340ab10b18a195e1b6eca3e
+pillow==13.0.0 ; sys_platform == 'linux' or sys_platform == 'win32' \
+    --hash=sha256:10b5019883c98f1dd819ca48ffc6f33a91cee04948fe637c605f4345c7cafd6f \
+    --hash=sha256:12fbb851cf323cc19aac3eea1df5ad17b57e91e9fe3cfd06100dba7bb8208c13 \
+    --hash=sha256:6a0920cb55df5a4d3f6862964908078c0bd59332bdd1bcd20d14e8c70ef27cc5 \
+    --hash=sha256:73ee25cf8cf8b75d5a5aeed7cb6588f5e5dbfbb0fde51707b630bbb23897645c \
+    --hash=sha256:7c88c10dd432f3b39ccdafc9ed81d0c21b8fd634502574da76d1bfa4fe2c76d0 \
+    --hash=sha256:83b37abd87b590acd8f47ca8a61f70893322b11834d36e07c2298dacad4d14d2 \
+    --hash=sha256:a192360d512305fe92d3053e4f7627bbad1f7708f1f4ad38cccd9336acabe9ad \
+    --hash=sha256:a625df9a2a5597fa5e5266e01aefc82604bb85d291e3547981e863560d75da6c \
+    --hash=sha256:cdcd1ba258178f7356d74170c9a81ba4eab6a5d55748bc402a5a2a6fe6be3510 \
+    --hash=sha256:d7710eb676e9bb68965cb045be0d333b4c0d7f9dfbaa7fbf121385b1588683d3 \
+    --hash=sha256:f391dc92a015c478745192fe4f2e120c2af2aba18d9fe0616341cbf537599806
     # via ragas
 propcache==0.5.4 ; sys_platform == 'linux' or sys_platform == 'win32' \
     --hash=sha256:004e685b315646c410771836e72a44f143bbe624f29653a42687815069a303d5 \
@@ -953,9 +945,9 @@ pyjwt==2.15.1 ; sys_platform == 'linux' or sys_platform == 'win32' \
     --hash=sha256:42d59d631f7768a1028a64c7ff581a9bf7519804daf91fc5b6c56e30eec5e193 \
     --hash=sha256:4f259e80cdfb6b3fc18a7de51fd1ef9ec79652f25019bae68975ca2468a34df8
     # via ragbench
-pypdf==6.19.0 ; sys_platform == 'linux' or sys_platform == 'win32' \
-    --hash=sha256:7e5d6e730e7dae87d560a2cee218b852f6498c8be61966f3cd02ead971e48d14 \
-    --hash=sha256:bbc43aca292369ccc6cbc8a921991ecf2538a3587ab5a116eff06c321d647155
+pypdf==6.21.4 ; sys_platform == 'linux' or sys_platform == 'win32' \
+    --hash=sha256:33e4fb41ca352810eb4e9838aa0d82d6888a5f8bf682f43e99cce5faa666255c \
+    --hash=sha256:c8817e3f888d47a087872ded69812c1ef30cacb871d6e053e0c00bbaf0bc2163
     # via ragbench
 pypika==0.51.1 ; sys_platform == 'linux' or sys_platform == 'win32' \
     --hash=sha256:77985b4d7ce71b9905255bf12468cf598349e98837c037541cfc240e528aec46 \
@@ -1007,9 +999,9 @@ pyyaml==6.0.3 ; sys_platform == 'linux' or sys_platform == 'win32' \
     #   langchain-community
     #   langchain-core
     #   uvicorn
-ragas==0.3.9 ; sys_platform == 'linux' or sys_platform == 'win32' \
-    --hash=sha256:1be77af14c7101f26125cc025ff1026f49e2d564162471ae590c3d832527f9c5 \
-    --hash=sha256:7807cfc3f01c0297ef99ab3e6a5f53e7cac0a73267d273273b17871437c55786
+ragas==0.4.4 ; sys_platform == 'linux' or sys_platform == 'win32' \
+    --hash=sha256:0f74ce029dcabd39139a95d362bfc8265b3cf59347af6ba3914ba6ac195be256 \
+    --hash=sha256:75c5edbcb377f85d4db89406f96a1716d4d586078f027ec495b0f529b620c6a9
     # via ragbench
 referencing==0.37.0 ; sys_platform == 'linux' or sys_platform == 'win32' \
     --hash=sha256:381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231 \
@@ -1046,6 +1038,7 @@ requests==2.33.0 ; sys_platform == 'linux' or sys_platform == 'win32' \
     #   langsmith
     #   opentelemetry-exporter-http-transport
     #   opentelemetry-exporter-otlp-proto-http
+    #   ragas
     #   requests-oauthlib
     #   requests-toolbelt
     #   tiktoken
@@ -1118,10 +1111,6 @@ six==1.17.0 ; sys_platform == 'linux' or sys_platform == 'win32' \
     # via
     #   kubernetes
     #   python-dateutil
-smmap==5.0.3 ; sys_platform == 'linux' or sys_platform == 'win32' \
-    --hash=sha256:4d9debb8b99007ae47165abc08670bd74cb74b5227dda7f643eccc4e9eb5642c \
-    --hash=sha256:c106e05d5a61449cf6ba9a1e650227ecfb141590d2a98412103ff35d89fc7b2f
-    # via gitdb
 sniffio==1.3.1 ; sys_platform == 'linux' or sys_platform == 'win32' \
     --hash=sha256:2f6da418d1f1e0fddd844478f41680e794e6051915791a034ff65e5f100525a2 \
     --hash=sha256:f4324edc670a0f49750a81b895f35c3adb843cca46f0530f79fc1babb23789dc
@@ -1163,6 +1152,7 @@ tenacity==9.1.4 ; sys_platform == 'linux' or sys_platform == 'win32' \
     #   instructor
     #   langchain-community
     #   langchain-core
+    #   ragas
     #   ragbench
 tiktoken==0.14.0 ; sys_platform == 'linux' or sys_platform == 'win32' \
     --hash=sha256:144a3fc369f92b7d548995217c5d6e84038d3572157a0f6f34080d65291d0f78 \

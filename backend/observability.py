@@ -360,6 +360,9 @@ def workflow(kind, storage_kind):
 def export_scores(run):
     from backend.run_state import valid_score
 
+    provenance = run.get("provenance", {})
+    ragas_version = provenance.get("ragas") or provenance.get("dependencies", {}).get("ragas")
+    evaluator = f"ragas-{ragas_version}" if ragas_version else "ragas"
     for row in run.get("rows", []):
         for metric, value in row.get("scores", {}).items():
             emit(
@@ -368,7 +371,7 @@ def export_scores(run):
                 question_index=row.get("question_index"),
                 metric=metric,
                 valid_count=int(valid_score(metric, value)),
-                evaluator="ragas-0.3.9",
+                evaluator=evaluator,
                 error_count=int(metric in row.get("errors", {})),
             )
             if valid_score(metric, value):
@@ -385,7 +388,7 @@ def export_scores(run):
                                 {
                                     "configuration_id": row["configuration_id"],
                                     "question_index": row["question_index"],
-                                    "evaluator": "ragas-0.3.9",
+                                    "evaluator": evaluator,
                                 }
                             ),
                         }

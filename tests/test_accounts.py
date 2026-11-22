@@ -235,3 +235,40 @@ def test_public_auth_throttle_denies_on_error(account_client, monkeypatch):
     client, _ = account_client
     monkeypatch.setattr(guardrails, "throttle", lambda *args: (_ for _ in ()).throw(OSError()))
     assert client.get("/auth/login?flow=" + "a" * 43).status_code == 503
+
+def test_auth_page_limit_preserves_proof_requests(account_client):
+    from backend.guardrails import locked, persist
+
+    client, store = account_client
+    with locked(store) as (db, state, _):
+        state["policy"]["requests_per_minute"] = 1
+        persist(store, db, state)
+
+    assert client.get("/auth/reset").status_code == 200
+    assert client.get("/auth/reset").status_code == 429
+    assert client.post(
+        "/auth/finish", json={"flow": "f" * 43}, headers={"Origin": "https://ragbench.example"}
+    ).status_code == 401
+
+
+def test_api_resolves_identity_once_off_event_loop(account_client, monkeypatch):
+    import asyncio
+
+    from backend import identity
+
+    client, _ = account_client
+    calls = []
+    original = identity.resolve
+
+    def resolve(store, authorization):
+        with pytest.raises(RuntimeError):
+            asyncio.get_running_loop()
+        calls.append(authorization)
+        return original(store, authorization)
+
+    monkeypatch.setattr(identity, "resolve", resolve)
+    bearer = "Bearer " + "o" * 32
+    response = client.get("/api/session", headers={"Authorization": bearer})
+    assert response.status_code == 200
+    assert response.json()["user_id"] == "owner"
+    assert calls == [bearer]

@@ -11,9 +11,10 @@ from pathlib import Path
 
 import pandas as pd
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
+from starlette.datastructures import Headers
 
 from backend.accounts import install as install_account_routes
 from backend.debugger_api import install as install_debugger_routes
@@ -101,7 +102,7 @@ async def lifespan(app):
                 flush()
 
 
-def authorize(authorization: str | None = Header(default=None)):
+def authenticate(authorization: str | None):
     from backend.identity import resolve
 
     token = os.getenv("API_TOKEN", "")
@@ -121,7 +122,16 @@ app = FastAPI(
     redoc_url=None,
     openapi_url=None,
 )
-auth = [Depends(authorize)]
+
+
+async def require_admitted_user():
+    from backend.identity import owner
+
+    if owner.get() is None:
+        raise HTTPException(401, "Authentication required")
+
+
+auth = [Depends(require_admitted_user)]
 
 
 @app.exception_handler(RequestValidationError)
@@ -191,9 +201,14 @@ class AdmissionMiddleware:
 
             try:
                 peer = (scope.get("client") or ("unknown",))[0]
+                proof = scope["method"] == "POST" and scope["path"] in {
+                    "/auth/finish",
+                    "/auth/redeem",
+                }
+                bucket = "auth-proof" if proof else "auth-page"
                 if not await asyncio.to_thread(
-                    throttle, store, "auth-ip:" + peer, False
-                ) or not await asyncio.to_thread(throttle, store, "auth-workspace", False):
+                    throttle, store, f"{bucket}:ip:{peer}"
+                ) or not await asyncio.to_thread(throttle, store, f"{bucket}:workspace"):
                     return await JSONResponse(
                         status_code=429, content={"detail": "Sign-in request limit exceeded"}
                     )(scope, receive, send)
@@ -215,8 +230,10 @@ class AdmissionMiddleware:
             peer = (scope.get("client") or ("unknown",))[0]
             if not await asyncio.to_thread(throttle, store, "ip:" + peer, write):
                 raise HTTPException(429, "Request limit exceeded")
-            headers = dict(scope["headers"])
-            user = authorize(headers.get(b"authorization", b"").decode("latin1"))
+            credentials = Headers(scope=scope).getlist("authorization")
+            if len(credentials) > 1:
+                raise HTTPException(401, "Invalid API token")
+            user = await asyncio.to_thread(authenticate, next(iter(credentials), None))
             if not await asyncio.to_thread(throttle, store, "user:" + user, write):
                 raise HTTPException(429, "User request limit exceeded")
             if not await asyncio.to_thread(throttle, store, "workspace", write):

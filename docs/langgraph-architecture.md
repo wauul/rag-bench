@@ -148,7 +148,7 @@ or persisted answer must not be advertised as faster fresh inference.
 
 Dependencies are pinned in `pyproject.toml` and `uv.lock`, including the native
 PostgreSQL saver and psycopg binary driver. The current set uses LangGraph 1.2.14,
-checkpoint 4.2.0, PostgreSQL saver 3.1.2 and SQLite saver 3.1.1, with Ragas 0.3.9.
+checkpoint 4.3.0, PostgreSQL saver 3.1.3 and SQLite saver 3.1.1, with Ragas 0.4.4.
 The Ragas embedding wrapper's deprecation remains; replacing it is separate work.
 
 ## Hosting and rollback

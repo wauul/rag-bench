@@ -32,8 +32,10 @@ Actual API sessions remain server-side in Streamlit and only their SHA-256 hashe
 are stored in PostgreSQL. Every API request rechecks expiry, account enablement,
 verification and provider ban state. Logout revokes that dashboard session.
 
-Sign-in/provider errors fail closed. Public handoff routes use durable socket-peer
-and global throttles and bounded request bodies. Unknown accounts get separate
+Sign-in/provider errors fail closed. Public auth pages and sign-in proof submissions
+use separate durable socket-peer and global request budgets. Rate-limit individual
+clients at trusted ingress when a reverse proxy shares one socket peer. Public
+handoff routes also have bounded request bodies. Unknown accounts get separate
 stable ownership IDs; they never inherit the owner's existing records.
 
 Optional API/CLI keys expire in 30 days, are stored only as hashes and can be

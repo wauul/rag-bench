@@ -48,9 +48,9 @@ else:
     )
     app = AppTest.from_string(script, default_timeout=15).run()
     assert not app.exception
-    assert any("The answer may" in m.value for m in app.markdown)
+    assert any("The answer may" in t.value for t in app.text)
     assert any("seven days" in t.value for t in app.text)
-    assert any("incomplete" in m.value for m in app.markdown)
+    assert any("incomplete" in t.value for t in app.text)
     assert len(app.get("download_button")) == 2
     next(b for b in app.button if b.label == "Create configuration draft").click().run()
     assert not app.exception
