@@ -94,12 +94,12 @@ def investigation_panel(api, run_id, row, edit_configuration, navigate):
                 st.rerun()
         diagnosis = report.get("diagnosis")
         if diagnosis and report["status"] == "completed":
-            st.write(diagnosis["summary"])
+            st.text(diagnosis["summary"])
             for h in diagnosis["hypotheses"]:
                 st.markdown(
                     f"**{h['category'].replace('_', ' ').title()} · {h['strength']} evidence**"
                 )
-                st.write(h["rationale"])
+                st.text(h["rationale"])
                 with st.expander("Supporting and contradicting evidence · " + h["category"]):
                     for label in ("supporting", "contradicting"):
                         for ref in h[label]:
@@ -110,8 +110,8 @@ def investigation_panel(api, run_id, row, edit_configuration, navigate):
                             )
                             st.text(ref["quote"])
             for index, experiment in enumerate(report["experiments"]):
-                st.markdown(f"**{experiment['title']}**")
-                st.write(experiment["condition"])
+                st.text(experiment["title"])
+                st.text(experiment["condition"])
                 st.button(
                     "Create configuration draft",
                     key=key + f"draft-{index}",
@@ -122,7 +122,7 @@ def investigation_panel(api, run_id, row, edit_configuration, navigate):
             for limitation in report.get("limitations", []) + (diagnosis or {}).get(
                 "limitations", []
             ):
-                st.write(limitation)
+                st.text(limitation)
         with st.expander("Technical provenance and model usage"):
             st.json(
                 {

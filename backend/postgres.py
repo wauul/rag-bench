@@ -1,6 +1,6 @@
 """Short-lived TLS connections allow Neon to sleep between requests and runs."""
 
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import urlsplit
 
 import psycopg
 
@@ -13,17 +13,21 @@ def validate_database_url(url):
         or not parts.path.strip("/")
     ):
         raise ValueError("DATABASE_URL must be a PostgreSQL connection URL")
-    if "-pooler" in parts.hostname:
+    # Use libpq's effective settings so query options cannot override validation.
+    try:
+        options = psycopg.conninfo.conninfo_to_dict(url)
+    except psycopg.ProgrammingError:
+        raise ValueError("Invalid PostgreSQL connection URL") from None
+    hosts = options.get("host", "").lower().split(",")
+    addresses = options.get("hostaddr", "").split(",")
+    if any("-pooler" in host for host in hosts):
         raise ValueError(
             "Use Neon's direct DATABASE_URL, not its pooled endpoint (worker session locks)"
         )
-    if parts.hostname not in {"localhost", "127.0.0.1", "::1"}:
-        if parse_qs(parts.query).get("sslmode", [""])[0] not in {
-            "require",
-            "verify-ca",
-            "verify-full",
-        }:
-            raise ValueError("Remote DATABASE_URL requires sslmode=require or stricter")
+    local = {"localhost", "127.0.0.1", "::1"}
+    if not set(hosts) <= local or not set(addresses) <= local | {""}:
+        if options.get("sslmode") != "verify-full":
+            raise ValueError("Remote DATABASE_URL requires sslmode=verify-full")
 
 
 def connect(url, **kwargs):

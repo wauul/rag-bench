@@ -125,11 +125,17 @@ def test_remote_url_requires_tls_and_direct_endpoint():
     for bad in (
         "sqlite:///data",
         "postgresql://u:p@ep-test.neon.tech/db",
-        "postgresql://u:p@ep-test-pooler.neon.tech/db?sslmode=require",
+        "postgresql://u:p@ep-test.neon.tech/db?sslmode=require",
+        "postgresql://u:p@ep-test.neon.tech/db?sslmode=verify-ca",
+        "postgresql://u:p@ep-test-pooler.neon.tech/db?sslmode=verify-full",
+        "postgresql://u:p@ep-test.neon.tech/db?sslmode=verify-full&sslmode=require",
+        "postgresql://u:p@localhost/db?host=ep-test.neon.tech&sslmode=disable",
+        "postgresql://u:p@localhost/db?hostaddr=192.0.2.1&sslmode=disable",
     ):
         with pytest.raises(ValueError):
             validate_database_url(bad)
-    validate_database_url("postgresql://u:p@ep-test.neon.tech/db?sslmode=require")
+    validate_database_url("postgresql://u:p@ep-test.neon.tech/db?sslmode=verify-full")
+    validate_database_url("postgresql://u:p@localhost/db?sslmode=disable")
 
 
 def test_rls_denies_other_user_even_without_application_filter(pg_url, tmp_path):

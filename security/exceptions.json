@@ -7,7 +7,7 @@
       "CVE-2026-45829"
     ],
     "owner": "wauul",
-    "expires": "2026-11-07",
+    "expires": "2026-12-21",
     "justification": "Only embedded PersistentClient is used. No Chroma HTTP server is exposed; collection embedding functions and remote code are never accepted from requests."
   },
   {
@@ -18,7 +18,7 @@
       "GHSA-36p7-vc44-83pf"
     ],
     "owner": "wauul",
-    "expires": "2026-11-07",
+    "expires": "2026-12-21",
     "justification": "Only embedded PersistentClient is used. No Chroma HTTP server is exposed; collection embedding functions and remote code are never accepted from requests."
   },
   {
@@ -29,7 +29,7 @@
       "CVE-2026-45831"
     ],
     "owner": "wauul",
-    "expires": "2026-11-07",
+    "expires": "2026-12-21",
     "justification": "Only embedded PersistentClient is used. No Chroma HTTP server is exposed; collection embedding functions and remote code are never accepted from requests."
   },
   {
@@ -40,7 +40,7 @@
       "CVE-2026-45830"
     ],
     "owner": "wauul",
-    "expires": "2026-11-07",
+    "expires": "2026-12-21",
     "justification": "Only embedded PersistentClient is used. No Chroma HTTP server is exposed; collection embedding functions and remote code are never accepted from requests."
   },
   {
@@ -51,18 +51,7 @@
       "GHSA-w8v5-vhqr-4h9v"
     ],
     "owner": "wauul",
-    "expires": "2026-11-07",
-    "justification": "Ragas disk cache is disabled. Durable results use SQLite and JSON; cache storage is owned by UID 10001 and never receives uploaded cache files."
-  },
-  {
-    "package": "ragas",
-    "id": "PYSEC-2026-3046",
-    "aliases": [
-      "CVE-2026-6587",
-      "GHSA-95ww-475f-pr4f"
-    ],
-    "owner": "wauul",
-    "expires": "2026-11-07",
-    "justification": "Only text Faithfulness, ResponseRelevancy, ContextPrecision and ContextRecall are constructed. Multimodal URL/file-processing collection metrics are never reachable."
+    "expires": "2026-12-21",
+    "justification": "Transitive dependency of Ragas. Ragbench does not instantiate DiskCacheBackend or accept uploaded cache files. Groq caching is disabled; persisted run state uses PostgreSQL or SQLite. Recheck on the next Ragas or diskcache release."
   }
 ]

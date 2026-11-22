@@ -780,7 +780,7 @@ def answer_explorer(run):
     )
     with st.container(border=True, key="reference_card"):
         st.caption("REFERENCE ANSWER")
-        st.write(run["questions"][index]["reference"])
+        st.text(run["questions"][index]["reference"])
     config_map = {c["id"]: c for c in run["configurations"]}
     selected = st.multiselect(
         "Configurations to inspect",
@@ -809,7 +809,7 @@ def answer_explorer(run):
                 if not row:
                     st.caption("This answer has not been evaluated yet.")
                     continue
-                st.write(
+                st.text(
                     row["answer"]
                     or (
                         "Generation pending"
@@ -864,7 +864,7 @@ def answer_explorer(run):
                 if row["errors"]:
                     with st.expander("Scoring errors", expanded=True):
                         for metric, error in row["errors"].items():
-                            st.write(f"{LABELS.get(metric, metric.title())}: {error}")
+                            st.text(f"{LABELS.get(metric, metric.title())}: {error}")
                 st.markdown("**Supporting passages**")
                 for rank, chunk in enumerate(row["contexts"], 1):
                     with st.expander(f"Passage {rank} · {chunk['source']} · page {chunk['page']}"):

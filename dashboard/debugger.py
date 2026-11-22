@@ -42,7 +42,7 @@ def show_trace(record):
                 candidate_score_chart(ordered, "rerank_score", "Reranker relevance", True)
             for i, c in enumerate(record["candidates"], 1):
                 cid = c.get("chunk_id")
-                st.write(
+                st.text(
                     f"Retrieval #{i} · final order #{ranks.get(cid, 'unavailable')} · {c.get('source', 'unavailable')} · page {c.get('page', 'unavailable')}"
                 )
                 st.caption(
